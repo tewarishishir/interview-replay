@@ -125,6 +125,128 @@ The raw transcript is always available at **Session → View transcript**. You c
 
 This works even without any LLM configured in the app.
 
+## Accessing your data
+
+Everything is stored locally — in PostgreSQL and on the local filesystem. You can query or copy it directly at any time.
+
+### Database tables
+
+Connect to the database with `psql`:
+
+```bash
+psql "$DATABASE_URL"
+# or with the default local setup:
+psql postgres://ir:ir@localhost:5432/ir
+```
+
+| Table | What it holds |
+|---|---|
+| `users` | Accounts — email, name, password hash, admin flag |
+| `interview_sessions` | One row per session — company, role, level, round type, state |
+| `transcripts` | Redacted transcript text, word count, duration, optional edited text |
+| `audio_files` | File key (relative path on disk) for each session's recording |
+| `reports` | Full AI coaching report as JSON, one per analysis run |
+| `artifacts` | Uploaded files attached to a session (whiteboard images, question lists, etc.) |
+| `stories` | Story bank entries (STAR format) |
+| `story_rebuilds` | AI-assisted STAR draft revisions |
+| `session_outcomes` | Outcome recorded after the interview (offer, rejected, etc.) |
+| `audit_log` | Server-side event log |
+
+### Useful queries
+
+**List all sessions:**
+```sql
+SELECT
+  s.id,
+  s.company_name,
+  s.role_title,
+  s.level,
+  s.round_type,
+  s.state,
+  s.created_at
+FROM interview_sessions s
+JOIN users u ON u.id = s.user_id
+WHERE u.email = 'admin@interview-replay.local'
+ORDER BY s.created_at DESC;
+```
+
+**Read the transcript for a session:**
+```sql
+SELECT
+  redacted_text,
+  edited_text,
+  word_count,
+  duration_seconds
+FROM transcripts
+WHERE session_id = '<session-uuid>';
+```
+
+**Get the AI report JSON for a session:**
+```sql
+SELECT
+  report_json,
+  model_version,
+  created_at
+FROM reports
+WHERE session_id = '<session-uuid>'
+ORDER BY created_at DESC
+LIMIT 1;
+```
+
+**Find the audio file path on disk:**
+```sql
+SELECT s3_key
+FROM audio_files
+WHERE session_id = '<session-uuid>';
+```
+
+The `s3_key` is a relative path from the storage root (default `./data/uploads`). Prefix it with your storage path to get the full location — see the section below.
+
+### Audio recordings on disk
+
+Audio is stored as `.webm` files under the storage root. The default path is `./data/uploads` relative to the project root (configurable via `STORAGE_PATH`).
+
+```
+data/uploads/
+├── audio/
+│   └── <user-id>/
+│       └── <session-id>/
+│           └── <uuid>.webm        ← the recording
+├── artifacts/
+│   └── <user-id>/
+│       └── <session-id>/
+│           └── <uuid>.png         ← uploaded whiteboard/diagram images
+└── resumes/
+    └── <user-id>/
+        └── <uuid>.pdf             ← uploaded resume
+```
+
+**To find and play a specific session's recording:**
+
+1. Get the file key from the database:
+   ```sql
+   SELECT s3_key FROM audio_files WHERE session_id = '<session-uuid>';
+   -- returns: audio/<user-id>/<session-id>/<uuid>.webm
+   ```
+
+2. Combine with your storage root:
+   ```bash
+   # Default path
+   open ./data/uploads/audio/<user-id>/<session-id>/<uuid>.webm
+   ```
+
+**To list all recordings on disk:**
+```bash
+find ./data/uploads/audio -name "*.webm" -exec ls -lh {} \;
+```
+
+**To download/copy a recording:**
+```bash
+cp ./data/uploads/audio/<user-id>/<session-id>/<uuid>.webm ~/Desktop/interview-recording.webm
+```
+
+`.webm` files open in VLC, QuickTime (with a codec pack), Chrome, or any modern browser via `File → Open`.
+
 ## Quick Start (Docker)
 
 ```bash
