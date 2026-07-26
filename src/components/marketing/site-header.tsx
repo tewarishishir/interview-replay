@@ -8,10 +8,6 @@ import { ThemeToggle } from "@/components/app/theme-toggle";
 import { UserMenu } from "@/components/app/user-menu";
 import { Wordmark } from "@/components/brand/wordmark";
 
-const navLinks = [
-  { href: "/about", label: "About" },
-] as const;
-
 /**
  * Marketing-site header.
  *
@@ -28,18 +24,6 @@ export async function SiteHeader() {
         <Link href="/" aria-label="InterviewReplay home">
           <Wordmark />
         </Link>
-
-        <nav className="hidden items-center gap-6 text-sm text-muted-foreground sm:flex">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="transition-colors hover:text-foreground"
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
 
         <div className="flex items-center gap-2">
           {/*

@@ -29,16 +29,6 @@ test.describe("marketing pages", () => {
     await expect(page.getByText(/Get structured feedback/)).toBeVisible();
   });
 
-  test("about page loads", async ({ page }) => {
-    await page.goto("/about");
-    await expect(
-      page.getByRole("heading", { name: /Why InterviewReplay exists/i }),
-    ).toBeVisible();
-    await expect(
-      page.getByText(/No surveillance, only reflection/i),
-    ).toBeVisible();
-  });
-
   test("honest-interview-feedback page loads with correct content and metadata", async ({
     page,
   }) => {
@@ -100,7 +90,6 @@ test.describe("marketing pages", () => {
     await expect(footer).toBeVisible();
 
     for (const [label, href] of [
-      ["About", "/about"],
       ["Honest interview feedback", "/honest-interview-feedback"],
       ["Sample report", "/sample-report"],
     ] as const) {

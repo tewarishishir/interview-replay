@@ -26,11 +26,17 @@ cp .env.example .env.local
 
 docker compose up db -d
 pnpm db:migrate
+pnpm db:seed
 
 pnpm dev
 ```
 
-The app runs at `http://localhost:3000`.
+The app runs at `http://localhost:3000`. Sign in with the default admin credentials:
+
+| Field | Value |
+|---|---|
+| Email | `admin@interview-replay.local` |
+| Password | `admin` |
 
 If you're only working on the UI or API routes, you don't need Ollama or faster-whisper installed. The app gracefully degrades — it shows placeholder reports when the LLM isn't available and skips transcription when whisper isn't installed.
 

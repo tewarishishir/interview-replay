@@ -4,7 +4,7 @@
  *
  * Run with:
  *   DATABASE_URL=<url> pnpm exec tsx --conditions=react-server \
- *     src/scripts/create-admin-user.ts hello@example.com "Display Name"
+ *     src/scripts/create-admin-user.ts admin@example.com "Display Name"
  *
  * - Idempotent: if the user already exists they are promoted and their
  *   password is NOT reset. The generated password is only printed when

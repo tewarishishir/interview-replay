@@ -11,10 +11,10 @@
  * a dev clone matches the production user's context out of the box.
  */
 
-export const SEED_EMAIL = "demo@interview-replay.local";
-export const SEED_PASSWORD = "ir-dev-password-1";
-export const SEED_NAME = "Priya Sharma";
-export const SEED_CREDITS = 5;
+export const SEED_EMAIL = "admin@interview-replay.local";
+export const SEED_PASSWORD = "admin";
+export const SEED_NAME = "Admin";
+export const SEED_CREDITS = 99;
 
 /**
  * Sample sessions to render on the dashboard. The mix is deliberate —

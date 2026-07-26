@@ -63,9 +63,7 @@ async function main(): Promise<void> {
       creditBalance: SEED_CREDITS,
       freeCreditUsed: false,
       emailVerified: new Date(),
-      // Pre-accept the current Terms so the seed user can land on
-      // the (app) shell without the re-acceptance modal blocking
-      // every e2e test. Re-accepted on every reseed below.
+      isAdmin: true,
       termsAcceptedAt: new Date(),
     })
     .onConflictDoUpdate({
@@ -74,11 +72,7 @@ async function main(): Promise<void> {
         passwordHash,
         creditBalance: SEED_CREDITS,
         updatedAt: new Date(),
-        // Resurrect a soft-deleted seed user so re-running seed always
-        // lands on a known-good baseline. Without this, any prior
-        // soft-delete (a future "delete my account" test, manual SQL)
-        // sticks around and `getDashboardUser` filters the user out,
-        // breaking sign-in for the seeded creds with no obvious clue.
+        isAdmin: true,
         deletedAt: null,
         deletionRequestedAt: null,
         termsAcceptedAt: new Date(),

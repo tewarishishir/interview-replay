@@ -37,9 +37,23 @@ docker exec ir-ollama ollama pull llama3.3:8b
 # Run database migrations
 docker exec ir-app npx drizzle-kit migrate
 
+# Seed the default admin user
+docker exec ir-app pnpm db:seed
+
 # Open in browser
 open http://localhost:3000
 ```
+
+### Default credentials
+
+After running `pnpm db:seed`, you can sign in with:
+
+| Field | Value |
+|---|---|
+| Email | `admin@interview-replay.local` |
+| Password | `admin` |
+
+This user is an admin with 99 credits. **Change these credentials before deploying to production.**
 
 See [docs/self-hosting.md](docs/self-hosting.md) for GPU setup, reverse proxy configuration, and production deployment.
 
@@ -76,11 +90,14 @@ pip install faster-whisper whisperx
 ollama pull llama3.3:70b
 ollama pull llama3.3:8b
 
+# Seed the default admin user
+pnpm db:seed
+
 # Start dev server
 pnpm dev
 ```
 
-The app starts at `http://localhost:3000`. Create an account, record a session, and submit it for analysis.
+The app starts at `http://localhost:3000`. Sign in with the default credentials above, record a session, and submit it for analysis.
 
 ## Configuration
 
