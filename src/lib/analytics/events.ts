@@ -17,7 +17,7 @@
 export const ANALYTICS_EVENTS = {
   signup: "user_signed_up",
   activation: "user_activated_first_session",
-  purchase: "credit_purchase_succeeded",
+  purchase: "session_analyzed",
   sessionCreated: "session_created",
   sessionCompleted: "session_completed",
   reportViewed: "report_viewed",
@@ -151,15 +151,6 @@ export const ANALYTICS_EVENTS = {
   // header for why that's a hard rule).
   feedbackSubmitted: "feedback_submitted",
 
-  // Free-trial funnel events (India launch). Measure:
-  //   - activation: % of signups that consume at least one free credit
-  //   - free-to-paid: % of users who exhaust free credits and then purchase
-  //   - time-to-purchase: median days from signup to first paid purchase
-  // Names match the spec verbatim so the dashboards line up.
-  freeCreditsGranted: "free_credits_granted",
-  firstCreditConsumed: "first_credit_consumed",
-  freeCreditsExhausted: "free_credits_exhausted",
-  firstPaidPurchase: "first_paid_purchase",
 
   // Sample report marketing page. Two events drive the conversion
   // funnel: did the visitor see the sample, and did they click

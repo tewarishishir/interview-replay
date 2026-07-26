@@ -54,10 +54,10 @@ export const LLM_MODEL_SMALL = (env.LLM_MODEL_SMALL || "llama3.3:8b") as string;
  * `evidenceQuote`).
  */
 export const MAX_TOKENS_BY_ROUND: Record<InterviewRoundType, number> = {
-  coding: 12_288,
-  system_design: 16_384,
-  behavioral: 12_288,
-  other: 12_288,
+  coding: 6_144,
+  system_design: 6_144,
+  behavioral: 6_144,
+  other: 6_144,
 };
 
 /**
@@ -79,10 +79,10 @@ export const MAX_TOKENS_BY_ROUND: Record<InterviewRoundType, number> = {
  *     to absorb verbose roundSpecific blocks.
  */
 export const CORE_MAX_TOKENS_BY_ROUND: Record<InterviewRoundType, number> = {
-  coding: 5_120,
-  system_design: 6_144,
-  behavioral: 6_144,
-  other: 5_120,
+  coding: 4_096,
+  system_design: 4_096,
+  behavioral: 4_096,
+  other: 4_096,
 };
 
 /**
@@ -214,9 +214,9 @@ export const STORIES_SCOPE_HINT =
  * knows it's reading a clipped recording), then truncate artifacts
  * round-robin until everything fits.
  */
-export const MAX_PROMPT_BODY_CHARS = 200_000;
-export const MAX_TRANSCRIPT_BODY_CHARS = 150_000;
-export const MAX_ARTIFACT_BODY_CHARS = 50_000;
+export const MAX_PROMPT_BODY_CHARS = 30_000;
+export const MAX_TRANSCRIPT_BODY_CHARS = 24_000;
+export const MAX_ARTIFACT_BODY_CHARS = 6_000;
 const TRUNCATION_MARKER =
   "\n\n[... transcript truncated for length; the report should call out that the recording exceeds analysis limits ...]\n\n";
 
@@ -243,8 +243,7 @@ export const THIN_TRANSCRIPT_MIN_SECONDS = 15;
 /**
  * Prefix on `AnalyzeResult.modelVersion` when the report was built
  * locally (not by the LLM). Used by the worker to decide whether to
- * refund the credit after persisting — fallback reports always
- * refund, real LLM reports never do.
+ * distinguish a fallback persistence from a real LLM persistence.
  *
  * Exported so the worker, the report renderer, and ops queries can
  * all share the same sentinel without re-deriving it.
@@ -1139,7 +1138,7 @@ function tryParseReport(raw: string): ParseOk | ParseErr {
   // renderer treats `undefined` as "analytics not available" and
   // shows the rest of the report. Without this salvage, a single
   // bad UUID on entry 0 of 12 fails the whole analysis and
-  // refunds the user's credits, even though entries 1-11 + the
+  // fails the whole analysis, even though entries 1-11 + the
   // entire prose report were perfectly fine.
   const sanitized = sanitizeReportInput(parsed.value);
 
@@ -1270,7 +1269,7 @@ export function sanitizeReportInput(parsed: unknown): unknown {
   //    these necessary: a 2-second misclick recording made the
   //    model honestly emit `strengths: []` / `improvements: []` —
   //    both schema-illegal, both load-bearing for the report page.
-  //    Failing here would refund-and-fail the session, leaving the
+  //    Failing here would fail the session, leaving the
   //    user staring at "Analysis didn't complete" with no
   //    actionable next step.
   //
@@ -1311,7 +1310,46 @@ export function sanitizeReportInput(parsed: unknown): unknown {
     ];
   }
 
-  // 2. Existing per_question_analytics salvage — drop unrecoverable
+  // 2. Backfill complex nested fields that small local models commonly
+  //    omit when they run out of effective context or stop early.
+  //    These have sensible stub values that satisfy the schema and
+  //    render gracefully in the UI — far better than a full failure.
+  if (!isPlainObject(obj.communicationSignals)) {
+    obj.communicationSignals = {
+      pace: { summary: "Communication signals could not be fully extracted — retry for a complete breakdown." },
+      fillerWords: { summary: "Filler-word data unavailable on this attempt.", topOffenders: [] },
+      structure: { summary: "Structure signals unavailable on this attempt." },
+      presence: { summary: "Presence signals unavailable on this attempt." },
+    };
+  }
+
+  if (!isPlainObject(obj.aiRead)) {
+    obj.aiRead = {
+      paragraph: "The AI Read section could not be generated on this attempt. The rest of the report captures what was extracted — retry for a fuller take.",
+    };
+  }
+
+  if (!isPlainObject(obj.roundSpecific)) {
+    // Try to preserve the `kind` field if the model emitted it anywhere.
+    const existingKind =
+      isPlainObject(obj.roundSpecific) &&
+      typeof (obj.roundSpecific as Record<string, unknown>).kind === "string"
+        ? (obj.roundSpecific as Record<string, unknown>).kind
+        : "other";
+    const stub =
+      "Round-specific signals could not be extracted on this attempt — retry for a full assessment.";
+    if (existingKind === "coding") {
+      obj.roundSpecific = { kind: "coding", problemFraming: stub, solutionExploration: stub, implementationHygiene: stub, verification: stub, recoveryFromFeedback: stub };
+    } else if (existingKind === "system_design") {
+      obj.roundSpecific = { kind: "system_design", requirementsGathering: stub, highLevelDesign: stub, deepDives: stub, tradeOffsAndFailureModes: stub, scalingStory: stub };
+    } else if (existingKind === "behavioral") {
+      obj.roundSpecific = { kind: "behavioral", starCompleteness: stub, specificity: stub, selfAwareness: stub, leadershipSignals: stub };
+    } else {
+      obj.roundSpecific = { kind: "other", understanding: stub, structure: stub, reasoning: stub, engagement: stub };
+    }
+  }
+
+  // 3. Existing per_question_analytics salvage — drop unrecoverable
   //    entries before Zod sees them.
   if ("per_question_analytics" in obj) {
     const pqa = obj.per_question_analytics;
@@ -1349,6 +1387,15 @@ export function sanitizeReportInput(parsed: unknown): unknown {
  */
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
+}
+
+/**
+ * True iff `v` is a plain (non-null, non-array) object. Used by
+ * `sanitizeReportInput` to detect missing nested objects that small
+ * local models omit when they stop early.
+ */
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 /**
@@ -1416,8 +1463,8 @@ function buildRoundSpecificStub(
  *     (`isThinTranscript` is true). We short-circuit before the
  *     LLM call.
  *   - The LLM call succeeded but the response failed schema
- *     validation even after the retry. We salvage rather than
- *     refund-and-fail so the user always sees a report.
+ *     validation even after the retry. We salvage so the user
+ *     always sees a report.
  *   - The LLM is not configured / unreachable in a deployment
  *     where placeholder reports aren't appropriate.
  *
@@ -1427,13 +1474,13 @@ function buildRoundSpecificStub(
  * populated). `modelVersion` carries the sentinel prefix
  * `fallback:` so the worker (and ops queries) can distinguish a
  * fallback persistence from a real LLM persistence; the worker
- * uses this to issue a credit refund.
+ * uses this to distinguish fallback from real LLM output.
  *
  * Copy is written for the CANDIDATE — blunt, second-person,
  * non-clinical. Two reasons drive two distinct user-facing
  * narratives because the recovery path is different:
  *
- *   - `thin_transcript` → "re-record the round, your credit is back"
+ *   - `thin_transcript` → "re-record the round"
  *   - everything else → "we ran into trouble, try re-analyzing"
  */
 export function buildFallbackReport(
@@ -1470,9 +1517,9 @@ export function buildFallbackReport(
 
   const subhead = isThin
     ? userEditedTranscript
-      ? `The edited transcript contains about ${effectiveWordCount} word${effectiveWordCount === 1 ? "" : "s"}, which isn't enough material for real evidence-anchored feedback. Your credit has been refunded — add more detail to the transcript and re-analyze, or record a new round to get a full report.`
-      : `The recording was ${args.transcript.durationSeconds}s long and contained about ${effectiveWordCount} word${effectiveWordCount === 1 ? "" : "s"}, which isn't enough material for real evidence-anchored feedback. Your credit has been refunded — re-record the round to get a full report.`
-    : "Something on our side prevented us from generating the full report. Your credit has been refunded. Use the \u201cRetry\u201d button above to re-analyze the same transcript — most retries succeed on the second attempt.";
+      ? `The edited transcript contains about ${effectiveWordCount} word${effectiveWordCount === 1 ? "" : "s"}, which isn't enough material for real evidence-anchored feedback. Add more detail to the transcript and re-analyze, or record a new round to get a full report.`
+      : `The recording was ${args.transcript.durationSeconds}s long and contained about ${effectiveWordCount} word${effectiveWordCount === 1 ? "" : "s"}, which isn't enough material for real evidence-anchored feedback. Re-record the round to get a full report.`
+    : "Something on our side prevented us from generating the full report. Use the \u201cRetry\u201d button above to re-analyze the same transcript — most retries succeed on the second attempt.";
 
   const stubDetail = isThin
     ? userEditedTranscript

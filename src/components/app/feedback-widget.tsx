@@ -22,8 +22,8 @@ import {
 } from "@/lib/feedback/schemas";
 
 /**
- * Floating "Feedback" widget mounted in every authenticated layout
- * (`(app)`, `(admin)`). Renders a small fixed-position pill in the
+ * Floating "Feedback" widget mounted in the authenticated layout
+ * (`(app)`). Renders a small fixed-position pill in the
  * bottom-right corner; clicking opens a modal with the submission
  * form.
  *
@@ -48,7 +48,7 @@ import {
  *
  * The `page_path` field is set from `usePathname()` at submit time
  * — query strings are stripped client-side so we don't smuggle
- * UTM or one-time tokens into the analytics + admin queue.
+ * UTM or one-time tokens into the analytics queue.
  */
 export function FeedbackWidget({ userId }: { userId: string | null }) {
   const pathname = usePathname();

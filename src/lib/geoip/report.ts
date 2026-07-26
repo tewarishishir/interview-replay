@@ -11,8 +11,6 @@ import { db, schema } from "@/lib/db";
  *
  * Columns aggregated:
  *   - signups by `users.signup_country_code`
- *   - paying users (distinct users with a `succeeded` credit purchase)
- *     by `users.signup_country_code`
  *   - sessions created by `users.signup_country_code`
  *
  * `null` country codes are bucketed into "UNKNOWN" so they show up in

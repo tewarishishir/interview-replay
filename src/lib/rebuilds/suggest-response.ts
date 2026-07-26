@@ -49,9 +49,6 @@ import {
  *      suggestion so the user gets *something* instead of a
  *      generic 502.
  *
- * Cost: ~$0.005 per call at Haiku prices. The route handler
- * charges 0.20 credits per call (same accumulator as critique).
- *
  * Daily-rate limiting (10 suggestions per rebuild per 24h) is
  * the route handler's job — the runner just runs.
  *

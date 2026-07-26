@@ -39,8 +39,8 @@ import {
  *
  *   The route also handles the LLM-fallback path: when generation
  *   degrades into `buildFallbackReport(...)` the worker persists a
- *   stub report and lands the row in `complete` (with a refunded
- *   credit) so the user has *something* to read. The report page
+ *   stub report and lands the row in `complete` so the user has
+ *   *something* to read. The report page
  *   surfaces a `FallbackRetryBanner` on top of that stub, which
  *   shares the same Retry button as `FailedPanel`. From the user's
  *   POV both flows are "the analysis didn't really produce a real

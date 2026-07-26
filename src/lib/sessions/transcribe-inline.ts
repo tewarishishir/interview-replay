@@ -5,7 +5,8 @@ import {
   processDiarization,
   type ProcessedTranscript,
 } from "@/lib/whisper/process";
-import { transcribeAudioObject } from "@/lib/whisper/transcribe";
+import { transcribeLocalFile } from "@/lib/whisper/transcribe";
+import { audioPath } from "@/lib/storage/keys";
 import { features } from "@/lib/env";
 import { StorageNotConfiguredError } from "@/lib/storage";
 
@@ -47,7 +48,8 @@ export async function runTranscribeInline(args: {
     }
 
     // 2. Transcribe the audio from local storage.
-    const response = await transcribeAudioObject({ s3Key: args.s3Key });
+    const filePath = audioPath(args.s3Key);
+    const response = await transcribeLocalFile(filePath);
 
     // 3. Process diarization + filler/word counts.
     processed = processDiarization(response);

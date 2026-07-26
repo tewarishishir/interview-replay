@@ -154,8 +154,7 @@ export default async function SubmitSessionPage({ params }: PageProps) {
           isReanalysis={isReanalysis}
         />
         <p className="text-xs text-muted-foreground">
-          Your transcript stays redacted. Audio is deleted ~60 seconds after
-          transcription.
+          Your transcript and audio stay on your local machine and are never deleted.
         </p>
       </div>
     </section>

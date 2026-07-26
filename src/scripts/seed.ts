@@ -32,7 +32,6 @@ import {
   SEED_EMAIL,
   SEED_NAME,
   SEED_PASSWORD,
-  sampleSessions,
 } from "./seed-fixtures";
 
 const isLocal = (url: string): boolean =>
@@ -97,32 +96,12 @@ async function main(): Promise<void> {
     .delete(schema.resumeParseJobs)
     .where(eq(schema.resumeParseJobs.userId, user.id));
 
-  // Insert sessions back-dated by `daysAgo`. We use a raw `createdAt`
-  // override so the dashboard list shows a realistic spread instead of
-  // four rows all at "just now".
-  const now = Date.now();
-  for (const sample of sampleSessions) {
-    const createdAt = new Date(now - sample.daysAgo * 86_400_000);
-    await db.insert(schema.interviewSessions).values({
-      userId: user.id,
-      companyName: sample.companyName,
-      roleTitle: sample.roleTitle,
-      level: sample.level,
-      roundType: sample.roundType,
-      state: sample.state,
-      consentAffirmedAt: createdAt,
-      createdAt,
-      updatedAt: createdAt,
-    });
-  }
-
   // CLI script: stdout is the intended output channel here.
   /* eslint-disable no-console */
   console.log("Seed complete:");
   console.log("  user.id            =", user.id);
   console.log("  user.email         =", user.email);
   console.log("  user.password      =", SEED_PASSWORD, "(plaintext, dev only)");
-  console.log("  sessions.count     =", sampleSessions.length);
   /* eslint-enable no-console */
 }
 

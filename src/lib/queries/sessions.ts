@@ -119,10 +119,7 @@ export async function getSession(
 }
 
 /**
- * Read-only view of the user's current credit balance + display name,
- * used by the dashboard header. Kept here (not in `queries/users.ts` —
- * which doesn't exist yet) so the dashboard has one place to fetch its
- * top-bar data.
+ * Read-only view of the current user, used by the dashboard header.
  */
 export interface DashboardUser {
   id: string;

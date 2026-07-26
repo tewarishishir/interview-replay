@@ -384,8 +384,8 @@ function StoryCard(props: {
     try {
       const response = await postStorySuggestResponse(props.story.id);
       if (!response.passedGuardrails) {
-        // Server skipped persistence + the credit charge. Render
-        // the placeholder STAR shell inline so the user gets a
+        // Server skipped persistence. Render the placeholder STAR
+        // shell inline so the user gets a
         // usable scaffold to fill in — the SuggestedResponseView
         // shows its own rose "not grounded" caveat banner above
         // the body when `passedGuardrails` is false.

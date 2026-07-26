@@ -8,10 +8,8 @@ export default function robots(): MetadataRoute.Robots {
         allow: ["/"],
         disallow: [
           "/api/",
-          "/admin/",
           "/dashboard",
           "/sessions/",
-          "/credits/",
           "/stories/",
           "/rebuilds/",
           "/account",

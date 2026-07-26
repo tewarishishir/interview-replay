@@ -42,14 +42,6 @@ import {
  *    separate from the per-rebuild critique cap so burning through
  *    story critiques doesn't block rebuild critiques and vice-versa.
  *
- * ## Credits
- *
- * Same 0.20-credit cost as every other Haiku call. Deducted from the
- * shared `rebuild_critique_units` accumulator; the audit row uses
- * event_type `story_critique.unit_charged` for attribution. The
- * per-user 10/24h gate reads those audit rows, so the count stays
- * consistent with what was billed.
- *
  * ## Response shape
  *
  * `{ critique, passedGuardrails, guardrailTripCount }`

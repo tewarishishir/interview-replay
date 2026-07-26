@@ -14,7 +14,6 @@ import {
   finalizeUpload,
   SessionAdvanceError,
 } from "@/lib/sessions/audio";
-import { persistTranscriptAndAdvance } from "@/lib/sessions/transcribe";
 
 const MAX_AUDIO_FILE_BYTES = 500 * 1024 * 1024; // 500 MB
 

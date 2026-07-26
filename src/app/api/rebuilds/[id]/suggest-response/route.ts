@@ -45,11 +45,6 @@ import {
  *      array. Status is NOT flipped — a suggestion is a
  *      side-channel, not a lifecycle event.
  *
- *   3. Charges the same per-call credit cost as critique
- *      (`REBUILD_CRITIQUE_CREDIT_COST = 0.20`). We share the
- *      `rebuild_critique_units` accumulator in v1; splitting
- *      buys nothing for analytics yet and the cost per Haiku
- *      call is comparable.
  *
  * On synthetic fallback (`passedGuardrails === false` from the
  * runner — schema-validation drift OR verbatim-citation
@@ -59,24 +54,10 @@ import {
  *     STAR-shaped placeholders ("[fill in metric]"); persisting
  *     it would *overwrite* a previously-good cached suggestion on
  *     a regenerate, destroying the user's draft for no value.
- *     This is the load-bearing divergence from `applyCritique`,
- *     where the fallback critique still carries 5 dimensions of
- *     structural feedback the user can use.
- *
- *   - Skip the daily rate gate increment. The
- *     `suggested_response_history` array stays untouched, so a
- *     streak of guardrail trips doesn't burn the user's 10/24h
- *     budget on calls that produced no value. The per-user
- *     burst limiter (`rebuildCritiqueLimiter`, 12/5min) is the
- *     authoritative DoS guard.
- *
- *   - Skip the credit charge. The user didn't get the value of
- *     a grounded draft.
- *
- *   - Surface the synthetic body in-band as
- *     `syntheticSuggestion` so the client can render the
- *     "AI generation failed — try again" caveat without touching
- *     the cached `aiSuggestedResponse`.
+ *   - Skip the daily rate gate increment so a streak of guardrail
+ *     trips doesn't burn the user's 10/24h budget.
+ *   - Surface the synthetic body in-band as `syntheticSuggestion`
+ *     so the client can render the "AI generation failed" caveat.
  */
 
 const paramsSchema = z.object({ id: z.uuid() });

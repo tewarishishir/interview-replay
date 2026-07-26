@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { writeFile } from "@/lib/storage/write";
+import { verifyFileToken } from "@/lib/storage/signed-url";
 import {
   audioKey,
   resumeKey,
@@ -9,6 +10,36 @@ import {
   MAX_RESUME_SIZE_BYTES,
   MAX_ARTIFACT_SIZE_BYTES,
 } from "@/lib/storage/keys";
+
+export async function PUT(request: NextRequest) {
+  const token = request.nextUrl.searchParams.get("token");
+  if (!token) {
+    return NextResponse.json({ error: "Missing token" }, { status: 400 });
+  }
+
+  const result = verifyFileToken(token);
+  if (!result.valid || !result.key) {
+    return NextResponse.json(
+      { error: result.error ?? "Invalid token" },
+      { status: 403 },
+    );
+  }
+
+  const body = await request.arrayBuffer();
+  if (body.byteLength === 0) {
+    return NextResponse.json({ error: "Empty body" }, { status: 400 });
+  }
+
+  if (body.byteLength > MAX_AUDIO_SIZE_BYTES) {
+    return NextResponse.json(
+      { error: `File too large (max ${MAX_AUDIO_SIZE_BYTES} bytes)` },
+      { status: 413 },
+    );
+  }
+
+  await writeFile(result.key, Buffer.from(body));
+  return NextResponse.json({ key: result.key });
+}
 
 export async function POST(request: NextRequest) {
   const session = await auth();

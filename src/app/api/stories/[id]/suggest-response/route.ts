@@ -43,17 +43,11 @@ import {
  *      the rebuild row. The bank card UI prefers the story-side
  *      value when present, falling back to the rebuild side.
  *
- * Credit accumulator: shares `rebuild_critique_units` with the
- * rebuild surface in v1 — both are Haiku calls of comparable
- * cost. Splitting the accumulator buys nothing for analytics
- * yet.
- *
  * On synthetic fallback (`passedGuardrails === false`):
  *
  *   - Skip persistence (don't overwrite a previously-good
  *     cached suggestion with placeholders).
  *   - Skip the rate-gate increment.
- *   - Skip the credit charge.
  *   - Surface the synthetic body via `syntheticSuggestion` so
  *     the client can render the "try again" caveat without
  *     touching the row.

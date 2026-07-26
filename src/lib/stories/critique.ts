@@ -46,8 +46,8 @@ import {
  *   - Same six post-LLM guardrails, same synthetic fallback shape,
  *     same retry-on-schema-failure pattern.
  *
- * The runner is intentionally side-effect-free — no DB writes,
- * no credit charges. The route handler is responsible for those.
+ * The runner is intentionally side-effect-free — no DB writes.
+ * The route handler is responsible for persistence.
  */
 
 /* ────────────────────────────────────────────────────────────── */

@@ -137,30 +137,6 @@ const escapeHtml = (s: string): string =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-export async function sendCreditsReadyEmail(args: {
-  to: string;
-  credits: number;
-  packName: string;
-}): Promise<SendEmailResult> {
-  const html = wrapHtml(
-    "Your credits are ready",
-    `<p>Thanks for your purchase. We've added <strong>${args.credits} credit${
-      args.credits === 1 ? "" : "s"
-    }</strong> to your account from the ${args.packName} pack.</p>
-     <p>You can use them to analyze your next interview whenever you're ready. Credits never expire.</p>
-     <p style="font-size:12px;color:#6b7280;">Your purchase details are available in your account under &ldquo;Recent purchases&rdquo;.</p>`,
-    "general",
-    `${APP_URL()}/dashboard`,
-    "Open your dashboard",
-  );
-  return sendEmail({
-    to: args.to,
-    subject: "Your InterviewReplay credits are ready",
-    html,
-    text: stripHtml(html),
-    category: "general",
-  });
-}
 
 export async function sendAnalysisReadyEmail(args: {
   to: string;
@@ -191,24 +167,23 @@ export async function sendWelcomeEmail(args: {
 }): Promise<SendEmailResult> {
   const greeting = args.name && args.name.trim() ? `Hi ${args.name},` : "Hi,";
   const html = wrapHtml(
-    "Welcome to InterviewReplay — your 2 free credits are ready",
+    "Welcome to InterviewReplay",
     `<p>${greeting}</p>
-     <p>You have <strong>2 credits</strong> in your account. That&rsquo;s enough for one full 60-minute interview, or two 30-minute rounds. Use them however fits your real interview schedule.</p>
+     <p>You&rsquo;re all set. InterviewReplay is free to use — record as many sessions as you like.</p>
      <p>How it works:</p>
      <ol style="margin:8px 0 16px 20px;padding:0;">
        <li>Start a session right before your interview begins.</li>
        <li>We record only your microphone (never the interviewer, never the screen).</li>
-       <li>The audio is transcribed and the recording is destroyed within 60 seconds.</li>
-       <li>Review and add any context, then get an AI-generated report.</li>
-     </ol>
-     <p>After your free credits are used, you can buy a credit pack starting at &#x20B9;399 (incl. 18% GST).</p>`,
+       <li>The audio is transcribed locally — it never leaves your machine.</li>
+       <li>Review and add any context, then get an AI-generated coaching report.</li>
+     </ol>`,
     "general",
     `${APP_URL()}/sessions/new`,
     "Start your first session",
   );
   return sendEmail({
     to: args.to,
-    subject: "Welcome to InterviewReplay — your 2 free credits are ready",
+    subject: "Welcome to InterviewReplay",
     html,
     text: stripHtml(html),
     category: "general",
@@ -273,7 +248,6 @@ export async function sendAccountDeletionFinalEmail(args: {
        <li>Your profile, sign-in credentials, and email address</li>
        <li>Every interview session, transcript, and report</li>
        <li>All artifacts and notes you added</li>
-       <li>Your credit ledger has been anonymized (financial records are kept per legal requirements but no longer linked to you)</li>
      </ul>
      <p>If this was not what you wanted, contact us at <a href="mailto:${PRIVACY_CONTACT_EMAIL}" style="color:#2c5d63;">${PRIVACY_CONTACT_EMAIL}</a> — we may be able to help, but the data itself is gone.</p>
      <p>Thanks for trying InterviewReplay.</p>`,
@@ -409,7 +383,7 @@ export async function sendDataExportReadyEmail(args: {
     "Your data export is ready",
     `<p>We've finished bundling your InterviewReplay data into a single ZIP archive.</p>
      <p>The download link below works until <strong>${dateStr}</strong> (${args.ttlDays} days from now). After that, the archive is automatically deleted from our storage.</p>
-     <p>The ZIP contains your profile, sessions, transcripts, artifacts, reports, and credit history — one JSON file per category. Audio recordings are not included; per our privacy policy we delete the original audio within 60 seconds of transcription.</p>`,
+     <p>The ZIP contains your profile, sessions, transcripts, artifacts, and reports — one JSON file per category. Audio recordings are stored locally on your machine and are not included in this export.</p>`,
     "privacy",
     args.downloadUrl,
     "Download your data",

@@ -22,40 +22,20 @@ import {
  * POST /api/rebuilds/:id/enhance
  *
  * Rewrite the candidate's STAR draft by applying the suggestions
- * from the rebuild's most recent critique. Steps mirror the
- * critique route (`./critique/route.ts`) almost exactly:
+ * from the rebuild's most recent critique. Steps:
  *
- *   1. Same-origin + active user — same hard gate as critique.
- *   2. Per-user burst limiter (`rebuildCritiqueLimiter`) — same
- *      cross-rebuild churn guard.
+ *   1. Same-origin + active user gate.
+ *   2. Per-user burst limiter (`rebuildCritiqueLimiter`).
  *   3. Load + ownership-check the rebuild row.
- *   4. Status gate: only `critiqued` rebuilds can be enhanced
- *      (enhance without an existing critique makes no sense).
- *   5. Per-rebuild 10/24h content gate (`assertCritiqueRateOk`)
- *      — reuses the critique history counter so critiques and
- *      enhances share the same combined daily budget.
- *   6. Credit preflight (`previewRebuildCritiqueCost`) — same
- *      0.20-credits-per-call cost as critique.
- *   7. `runEnhance` — calls the small model with the draft + critique
+ *   4. Status gate: only `critiqued` rebuilds can be enhanced.
+ *   5. Per-rebuild 10/24h content gate (`assertCritiqueRateOk`).
+ *   6. `runEnhance` — calls the LLM with the draft + critique
  *      and returns rewritten STAR fields.
- *   8. `patchRebuild` — persists the enhanced draft fields.
- *   9. `chargeRebuildCritique` — deducts credits via the shared
- *      `rebuild_critique_units` accumulator.
- *  10. Fire `rebuild_enhance_applied` analytics event.
+ *   7. `patchRebuild` — persists the enhanced draft fields.
+ *   8. Fire `rebuild_enhance_applied` analytics event.
  *
- * Error handling diverges from the critique route in one place:
- * enhance has no guardrail fallback path. If `runEnhance` can't
- * produce a valid enhanced draft (schema-validation failure after
- * one retry) it throws `EnhanceValidationError` → 502 the user
- * can retry. Serving the user a meaningless placeholder as an
- * "applied" draft is worse UX than "something went wrong, try
- * again."
- *
- * Credit charging follows the same conventions as critique (see
- * that route for the detailed rationale): pre-LLM 402 on
- * out-of-credits, post-persist charge regardless of guardrail
- * outcomes (not applicable here), race-condition swallowed and
- * logged if the charge fails.
+ * If `runEnhance` can't produce a valid enhanced draft it throws
+ * `EnhanceValidationError` → 502 the user can retry.
  */
 
 const paramsSchema = z.object({ id: z.uuid() });

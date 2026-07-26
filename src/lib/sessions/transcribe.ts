@@ -207,10 +207,7 @@ export async function persistTranscriptAndAdvance(args: {
 
   // Authoritative duration: transcription measurement when available,
   // clamped to the 6h ceiling. The client value is only used as a
-  // fallback. This is the load-bearing fix for "client tampers with
-  // duration_seconds to dodge billing" — once this column is set
-  // from the transcriber, the analyze route's `creditsForDuration` reads
-  // a server-trusted value.
+  // fallback so the server always records a trustworthy duration.
   const authoritativeDuration = resolveAuthoritativeDuration({
     fromTranscriber: processed?.audioDurationSeconds ?? null,
     fromClientFallback: args.durationSeconds,

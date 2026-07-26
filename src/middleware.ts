@@ -7,9 +7,8 @@ import { NextResponse, type NextRequest } from "next/server";
  * The matcher below enumerates every public URL that lives inside the
  * `(app)` route group — `(app)` is purely a layout-scoping construct and
  * does not appear in URLs, so we list its children explicitly. As new
- * authenticated routes land (e.g. `/settings`, `/billing`), add them
- * here AND remember the `(app)/layout.tsx` server-side check still
- * re-validates the session.
+ * authenticated routes land, add them here AND remember the
+ * `(app)/layout.tsx` server-side check still re-validates the session.
  *
  * We decode the JWT directly via `getToken` (edge-safe, no DB) rather
  * than the `auth()` wrapper from Auth.js v5, because the wrapper
@@ -52,15 +51,7 @@ export const config = {
   matcher: [
     "/dashboard/:path*",
     "/sessions/:path*",
-    "/credits/:path*",
     "/account/:path*",
     "/profile/:path*",
-    // The `(admin)` route group lives at `/admin/*`. The middleware
-    // gate here ONLY checks that the caller is authenticated;
-    // the is_admin gate (and the redirect to /dashboard for non-
-    // admins) lives in `src/app/(admin)/layout.tsx` so the
-    // existence of `/admin/*` isn't leaked to anonymous traffic
-    // via a different redirect target.
-    "/admin/:path*",
   ],
 };

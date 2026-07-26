@@ -24,53 +24,19 @@ import {
  *
  * Run a fresh critique against the candidate's draft. Steps:
  *
- *   1. Same-origin + active user (no exceptions; a soft-deleted
- *      user must not be able to burn LLM credit on their JWT's
- *      remaining lifetime).
- *   2. Per-user burst limiter (`rebuildCritiqueLimiter`) caps
- *      the cross-rebuild churn — guards against a stuck client
- *      hammering Get Critique across 11 different rebuilds in a
- *      minute.
+ *   1. Same-origin + active user gate.
+ *   2. Per-user burst limiter (`rebuildCritiqueLimiter`) — guards
+ *      against a stuck client hammering Get Critique rapidly.
  *   3. Load + ownership-check the rebuild row.
  *   4. Per-rebuild 10/24h gate (`assertCritiqueRateOk`). Throws
  *      RebuildCritiqueRateLimitError → 429 with Retry-After.
  *   5. `runCritique` — talks to the LLM, validates, runs
  *      guardrails, returns either the model's response or a
  *      fallback critique with profile_reference fields stripped.
- *   6. On guardrail trips, emit one log event per trip (the
- *      runner doesn't do side effects).
+ *   6. On guardrail trips, emit one log event per trip.
  *   7. `applyCritique` persists the result + pushes the prior
  *      critique onto critique_history.
- *   8. Fire analytics events: critique_requested,
- *      profile_leverage_surfaced, profile_discrepancy_flagged.
- *
- * Credit charging (added after launch — every critique calls
- * the LLM, so making it free was an unbounded LLM-spend hole):
- *
- *   - Each critique costs 0.20 credits, accumulated in
- *     `users.rebuild_critique_units`. Every 5th critique deducts
- *     one whole credit and writes a `rebuild_critique_charge`
- *     ledger row. `chargeRebuildCritique` is the single mutator.
- *   - We preflight the cost (`previewRebuildCritiqueCost`) BEFORE
- *     the LLM round-trip so an out-of-credits user gets a 402
- *     instead of a "we paid for the LLM call but couldn't bill you" race.
- *   - We charge AFTER `applyCritique` succeeds, regardless of
- *     `passedGuardrails`. Fallback critiques (guardrail trip →
- *     stripped basic critique, OR LLM-validation-failed → synthetic
- *     structural critique) STILL get billed because:
- *       (a) we already paid for the LLM round-trip, and
- *       (b) `applyCritique` persists the fallback so the user
- *           sees a real, structured critique on screen — not just
- *           a placeholder. From the user's perspective each click
- *           "Costs 0.20 credits per critique" (the literal CTA
- *           copy), and inconsistently skipping the charge on
- *           guardrail trips made the deduction look broken from
- *           the user's POV ("I clicked, got a critique, balance
- *           didn't move").
- *     Pre-LLM errors (preflight missing fields, 503 LLM
- *     unavailable, 402 out-of-credits) still don't charge — those
- *     short-circuit BEFORE the LLM call and never get to
- *     `applyCritique`.
+ *   8. Fire analytics events.
  */
 
 const paramsSchema = z.object({ id: z.uuid() });
