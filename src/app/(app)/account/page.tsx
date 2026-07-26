@@ -1,0 +1,221 @@
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import type { Metadata } from "next";
+import { eq } from "drizzle-orm";
+import { LocalTime } from "@/components/ui/local-time";
+
+import { auth } from "@/lib/auth";
+import {
+  ACCOUNT_DELETION_GRACE_DAYS,
+  describeDeletionState,
+  PRIVACY_CONTACT_EMAIL,
+} from "@/lib/compliance";
+import { db, schema } from "@/lib/db";
+import {
+  buildReferralLink,
+  ensureReferralCodeForUser,
+  getReferralStats,
+} from "@/lib/referrals";
+import {
+  AccountDeletionSection,
+  AccountRestoreBanner,
+} from "@/components/app/account-section";
+import { ReferralSection } from "@/components/app/referral-section";
+import { ThemeSection } from "@/components/app/theme-section";
+
+export const metadata: Metadata = {
+  title: "Account",
+};
+
+export default async function AccountPage() {
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/signin?callbackUrl=/account");
+  }
+  const userId = session.user.id;
+
+  const [user] = await db
+    .select({
+      id: schema.users.id,
+      email: schema.users.email,
+      name: schema.users.name,
+      creditBalance: schema.users.creditBalance,
+      createdAt: schema.users.createdAt,
+      deletedAt: schema.users.deletedAt,
+      deletionRequestedAt: schema.users.deletionRequestedAt,
+      termsAcceptedAt: schema.users.termsAcceptedAt,
+    })
+    .from(schema.users)
+    .where(eq(schema.users.id, userId))
+    .limit(1);
+
+  if (!user) {
+    redirect("/signin?callbackUrl=/account");
+  }
+
+  const deletionState = describeDeletionState({
+    deletedAt: user.deletedAt,
+    deletionRequestedAt: user.deletionRequestedAt,
+  });
+
+  // Referral code + stats for the "Invite friends" panel. The
+  // ensure helper is idempotent — it returns the existing code
+  // when the user already has one and mints a fresh one only on
+  // first read for accounts that pre-date migration `0017`.
+  const [referralCode, referralStats] = await Promise.all([
+    ensureReferralCodeForUser(userId),
+    getReferralStats(userId),
+  ]);
+  const requestHeaders = await headers();
+  const proto = requestHeaders.get("x-forwarded-proto") ?? "https";
+  const host =
+    requestHeaders.get("x-forwarded-host") ??
+    requestHeaders.get("host") ??
+    null;
+  const referralLink = buildReferralLink({
+    code: referralCode,
+    origin: host ? `${proto}://${host}` : null,
+  });
+
+  return (
+    <section className="mx-auto max-w-3xl px-6 py-12">
+      <header className="border-b border-border pb-6">
+        <h1 className="text-3xl font-semibold tracking-tight">Account</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Profile and account deletion.
+        </p>
+      </header>
+
+      {deletionState.pending && deletionState.hardDeleteAt && (
+        <div className="mt-6">
+          <AccountRestoreBanner
+            hardDeleteAtIso={deletionState.hardDeleteAt.toISOString()}
+            graceDays={ACCOUNT_DELETION_GRACE_DAYS}
+          />
+        </div>
+      )}
+
+      <div className="mt-8 space-y-6">
+        <Card heading="Profile">
+          <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+            <Field label="Email" value={user.email} />
+            <Field
+              label="Display name"
+              value={user.name ?? <em className="not-italic text-muted-foreground">not set</em>}
+            />
+            <Field label="Credit balance" value={`${user.creditBalance}`} />
+            <Field
+              label="Joined"
+              value={<LocalTime date={user.createdAt} options={{ year: "numeric", month: "long", day: "numeric" }} />}
+            />
+            <Field
+              label="Terms accepted"
+              value={
+                user.termsAcceptedAt
+                  ? <LocalTime date={user.termsAcceptedAt} options={{ year: "numeric", month: "short", day: "numeric" }} />
+                  : "Not yet"
+              }
+            />
+          </dl>
+        </Card>
+
+        <Card heading="Invite friends, earn credits">
+          <ReferralSection
+            code={referralCode}
+            link={referralLink}
+            refereesCount={referralStats.refereesCount}
+            creditsEarned={referralStats.creditsEarned}
+          />
+        </Card>
+
+        <Card heading="Appearance">
+          <ThemeSection />
+        </Card>
+
+        <Card heading="Delete my account" tone="destructive">
+          {deletionState.pending ? (
+            <p className="text-sm text-muted-foreground">
+              Your account is scheduled for deletion. See the banner
+              above to cancel, or do nothing and we&apos;ll permanently
+              delete everything on the date shown.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">
+                We&apos;ll start a {ACCOUNT_DELETION_GRACE_DAYS}-day grace
+                period. During that window, signing back in cancels the
+                deletion. After it expires, we permanently delete your
+                profile, sessions, transcripts, artifacts, and reports.
+                Financial records (purchases, ledger entries) are
+                anonymized but kept for tax compliance.
+              </p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Questions? Email{" "}
+                <a
+                  className="text-foreground underline"
+                  href={`mailto:${PRIVACY_CONTACT_EMAIL}`}
+                >
+                  {PRIVACY_CONTACT_EMAIL}
+                </a>{" "}
+                first &mdash; we may be able to help with whatever
+                prompted this.
+              </p>
+              <div className="mt-4">
+                <AccountDeletionSection
+                  graceDays={ACCOUNT_DELETION_GRACE_DAYS}
+                  userEmail={user.email}
+                />
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
+    </section>
+  );
+}
+
+function Card({
+  heading,
+  children,
+  tone,
+}: {
+  heading: string;
+  children: React.ReactNode;
+  tone?: "destructive";
+}) {
+  const border =
+    tone === "destructive"
+      ? "border-destructive/40"
+      : "border-border";
+  return (
+    <section
+      className={`rounded-xl border bg-background p-6 ${border}`}
+    >
+      <h2
+        className={`text-lg font-semibold ${
+          tone === "destructive" ? "text-destructive" : "text-foreground"
+        }`}
+      >
+        {heading}
+      </h2>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
+function Field({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div>
+      <dt className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="mt-1 text-foreground">{value}</dd>
+    </div>
+  );
+}

@@ -1,0 +1,439 @@
+@import "tailwindcss";
+
+/**
+ * InterviewReplay design tokens.
+ *
+ * Two parallel token systems coexist here:
+ *
+ *   1. The shadcn-style OKLCH tokens (`--background`, `--foreground`,
+ *      `--primary`, etc.) — the current source of truth for every
+ *      shipped component. Mapped into Tailwind's color palette via
+ *      the `@theme inline` block below, which is what turns
+ *      `bg-background` / `text-foreground` / `border-border` into
+ *      actual CSS.
+ *
+ *   2. The semantic spec tokens (`--color-bg-primary`,
+ *      `--color-text-primary`, etc.) — the long-term design vocabulary
+ *      from the theme spec. Existing components will migrate over to
+ *      these in follow-up prompts (as the Analytics tab lands). New
+ *      surfaces can opt in immediately via `var(--color-bg-primary)`.
+ *
+ * Both systems flip on the SAME signal — the `[data-theme="dark"]`
+ * attribute on `<html>`, which the root layout sets server-side
+ * from the user's preference (or cookie) and the inline anti-FOUC
+ * script overrides when `preference === 'system'`. Switching themes
+ * therefore affects every component on the page, not just the
+ * migrated ones.
+ *
+ * Colors expressed in OKLCH for perceptual linearity in the legacy
+ * tokens; the new tokens are kept as hex/rgba to match the spec
+ * verbatim.
+ *
+ * NOTE: the old setup used `@media (prefers-color-scheme: dark)` as
+ * the dark-mode trigger. That's been replaced with
+ * `[data-theme="dark"]` so an explicit user choice (light/dark)
+ * wins over the OS preference. When the user picks "system", the
+ * inline script in the root layout resolves the OS preference and
+ * stamps the attribute itself.
+ */
+@layer base {
+  :root,
+  [data-theme="light"] {
+    /* ── Legacy shadcn tokens ──────────────────────────────────── */
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.18 0 0);
+    --muted: oklch(0.97 0.005 220);
+    --muted-foreground: oklch(0.45 0.01 220);
+    --border: oklch(0.92 0.005 220);
+
+    /* Desaturated teal — calm, professional, distinct from typical
+     * SaaS purple/indigo gradients. */
+    --primary: oklch(0.52 0.07 200);
+    --primary-foreground: oklch(0.99 0 0);
+
+    --destructive: oklch(0.55 0.20 25);
+    --destructive-foreground: oklch(0.99 0 0);
+
+    /* Shadcn surface tokens. These are referenced by the Select /
+     * Dialog / Popover / Card / Input primitives via classes like
+     * `bg-popover`, `bg-accent`, `text-popover-foreground`,
+     * `border-input`, `ring-ring`. They are NOT optional — if any
+     * of them go undefined the corresponding primitive renders
+     * with no background, which is what produced the bug where
+     * the "File this story under" theme dropdown rendered with a
+     * transparent body that the AI critique cards bled through.
+     *
+     * `--popover` and `--card` deliberately match `--background`
+     * so floating surfaces blend with the page in light mode and
+     * stay readable in dark mode (where the body is near-black).
+     * `--accent` is a notch warmer than `--muted` so hovered /
+     * focused dropdown items have a visible-but-quiet highlight.
+     */
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.18 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.18 0 0);
+    --accent: oklch(0.95 0.005 220);
+    --accent-foreground: oklch(0.18 0 0);
+    --secondary: oklch(0.95 0.005 220);
+    --secondary-foreground: oklch(0.18 0 0);
+    --input: oklch(0.92 0.005 220);
+    --ring: oklch(0.52 0.07 200);
+
+    --radius: 0.625rem;
+
+    /* ── Spec tokens (new vocabulary) ──────────────────────────── */
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f7f6f2;
+    --color-bg-tertiary: #edebe3;
+    --color-bg-inverse: #1a1a1a;
+
+    --color-text-primary: #1a1a1a;
+    --color-text-secondary: #595959;
+    --color-text-tertiary: #8a8a8a;
+    --color-text-inverse: #f7f6f2;
+
+    --color-border-tertiary: rgba(0, 0, 0, 0.08);
+    --color-border-secondary: rgba(0, 0, 0, 0.15);
+    --color-border-primary: rgba(0, 0, 0, 0.25);
+
+    --color-ir-navy: #1f3864;
+    --color-ir-navy-light: #2c4d8f;
+    --color-ir-gold: #c8893e;
+    --color-ir-gold-light: #e0a858;
+
+    --color-success: #1d9e75;
+    --color-success-bg: #e1f5ee;
+    --color-success-text: #085041;
+    --color-warning: #ef9f27;
+    --color-warning-bg: #faeeda;
+    --color-warning-text: #854f0b;
+    --color-danger: #d85a30;
+    --color-danger-bg: #faece7;
+    --color-danger-text: #993c1d;
+    --color-info: #378add;
+    --color-info-bg: #e6f1fb;
+    --color-info-text: #0c447c;
+
+    --color-chart-1: #1f3864;
+    --color-chart-2: #c8893e;
+    --color-chart-3: #1d9e75;
+    --color-chart-4: #7f77dd;
+    --color-chart-5: #d85a30;
+
+    /* Muted coral for "Did not advance" — intentionally
+     * desaturated so it reads as informational rather than alarming. */
+    --color-outcome-negative: #9b7b6e;
+  }
+
+  [data-theme="dark"] {
+    /* ── Legacy shadcn tokens ──────────────────────────────────── */
+    --background: oklch(0.16 0 0);
+    --foreground: oklch(0.985 0 0);
+    --muted: oklch(0.22 0.005 220);
+    --muted-foreground: oklch(0.72 0.01 220);
+    --border: oklch(0.28 0.005 220);
+
+    --primary: oklch(0.72 0.07 200);
+    --primary-foreground: oklch(0.18 0 0);
+
+    --destructive: oklch(0.62 0.20 25);
+    --destructive-foreground: oklch(0.99 0 0);
+
+    /* Dark-mode pair: floating surfaces sit one shade above the
+     * page background so the dropdown reads as a discrete card
+     * on top of the report (otherwise it would visually melt
+     * into the same near-black canvas). */
+    --popover: oklch(0.22 0.005 220);
+    --popover-foreground: oklch(0.985 0 0);
+    --card: oklch(0.20 0.005 220);
+    --card-foreground: oklch(0.985 0 0);
+    --accent: oklch(0.30 0.005 220);
+    --accent-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.28 0.005 220);
+    --secondary-foreground: oklch(0.985 0 0);
+    --input: oklch(0.28 0.005 220);
+    --ring: oklch(0.72 0.07 200);
+
+    /* ── Spec tokens (new vocabulary) ──────────────────────────── */
+    --color-bg-primary: #0f0f11;
+    --color-bg-secondary: #1a1a1d;
+    --color-bg-tertiary: #232328;
+    --color-bg-inverse: #f7f6f2;
+
+    --color-text-primary: #f2f2f2;
+    --color-text-secondary: #b3b3b3;
+    --color-text-tertiary: #7a7a7a;
+    --color-text-inverse: #1a1a1a;
+
+    --color-border-tertiary: rgba(255, 255, 255, 0.08);
+    --color-border-secondary: rgba(255, 255, 255, 0.15);
+    --color-border-primary: rgba(255, 255, 255, 0.25);
+
+    /* Brand colors lift slightly so they read against the near-black
+     * canvas. Direct hex copies of the spec's dark-mode pairs. */
+    --color-ir-navy: #5b7bab;
+    --color-ir-navy-light: #7894c0;
+    --color-ir-gold: #e0a858;
+    --color-ir-gold-light: #ebc080;
+
+    --color-success: #5dcaa5;
+    --color-success-bg: rgba(29, 158, 117, 0.15);
+    --color-success-text: #9fe1cb;
+    --color-warning: #f0b856;
+    --color-warning-bg: rgba(239, 159, 39, 0.15);
+    --color-warning-text: #fac775;
+    --color-danger: #e07a55;
+    --color-danger-bg: rgba(216, 90, 48, 0.15);
+    --color-danger-text: #f0997b;
+    --color-info: #5ba0e5;
+    --color-info-bg: rgba(55, 138, 221, 0.15);
+    --color-info-text: #85b7eb;
+
+    --color-chart-1: #5b7bab;
+    --color-chart-2: #e0a858;
+    --color-chart-3: #5dcaa5;
+    --color-chart-4: #afa9ec;
+    --color-chart-5: #f0997b;
+
+    /* Slightly lighter coral for readability against dark backgrounds. */
+    --color-outcome-negative: #b79588;
+  }
+
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.6;
+  }
+
+  /**
+   * Theme-change transition.
+   *
+   * Without this, flipping `data-theme` makes every painted color
+   * snap on the same frame, which reads as a jarring flash on a
+   * full page. A short fade across the three properties that
+   * actually change (background, border, color) sells the switch
+   * as deliberate.
+   *
+   * The transition is also applied to `html` itself so the body
+   * background animates in sync with the rest of the page.
+   *
+   * `prefers-reduced-motion: reduce`: drop the transition entirely
+   * for users who've opted out of animation. Theme change is then
+   * instant (matching the rest of their OS).
+   */
+  html,
+  body,
+  *,
+  *::before,
+  *::after {
+    transition-property: background-color, border-color, color, fill, stroke;
+    transition-duration: 200ms;
+    transition-timing-function: ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html,
+    body,
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0ms;
+    }
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+/**
+ * Report-view Tabs visibility (screen).
+ *
+ * The report uses Radix `Tabs` with `forceMount` on every `TabsContent`
+ * so the print stylesheet below can reveal every section in one PDF
+ * export. With `forceMount` enabled, Radix renders each panel WITHOUT
+ * the `hidden` HTML attribute (it sets `present = forceMount || isSelected`
+ * and uses the resulting `present` flag for `hidden`). That means the
+ * inactive panels would be visible on screen unless we hide them
+ * ourselves — so the rule below does exactly that, scoped to the
+ * report wrapper so it can never bleed into another tabbed surface
+ * (story bank, profile, etc.) elsewhere in the app.
+ *
+ * The companion `@media print` rule re-shows them for export.
+ */
+[data-slot="report"] [data-slot="tabs-content"][data-state="inactive"] {
+  display: none;
+}
+
+/**
+ * Print stylesheet for the report page (print/PDF export). Real PDF
+ * generation lands later; for now the browser print dialog is the
+ * delivery channel and we just need a clean, single-column layout
+ * with the chrome (header, sidebar, action buttons) hidden.
+ *
+ * The `print:hidden` Tailwind class on the `SessionActions`
+ * component hides the action cluster directly; this stylesheet
+ * additionally hides the global app header and the sidebar wrapper
+ * via the `[data-print-hide]` attribute set on those elements.
+ */
+@media print {
+  /*
+   * Force light-mode tokens for print/PDF regardless of the user's
+   * screen theme.
+   *
+   * Why both `:root` and `[data-theme="dark"]`:
+   *   The dark-mode block uses the attribute selector `[data-theme="dark"]`
+   *   which has specificity (0,1,0). `:root` alone only has (0,0,1), so the
+   *   dark-mode values win — every component using var(--color-bg-primary)
+   *   etc. keeps its dark background in the PDF. Matching `[data-theme="dark"]`
+   *   here gives the same specificity with a later position in the cascade,
+   *   so the print values win.
+   *
+   *   All tokens are reset to their light-mode values so cards, text, and
+   *   borders all render correctly on white paper.
+   */
+  :root,
+  [data-theme="dark"] {
+    /* ── Legacy shadcn tokens ───────────────────────────────────── */
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.18 0 0);
+    --muted: oklch(0.97 0.005 220);
+    --muted-foreground: oklch(0.45 0.01 220);
+    --border: oklch(0.92 0.005 220);
+    --primary: oklch(0.52 0.07 200);
+    --primary-foreground: oklch(0.99 0 0);
+    --destructive: oklch(0.55 0.20 25);
+    --destructive-foreground: oklch(0.99 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.18 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.18 0 0);
+    --accent: oklch(0.95 0.005 220);
+    --accent-foreground: oklch(0.18 0 0);
+    --secondary: oklch(0.95 0.005 220);
+    --secondary-foreground: oklch(0.18 0 0);
+    --input: oklch(0.92 0.005 220);
+    --ring: oklch(0.52 0.07 200);
+
+    /* ── Spec tokens ────────────────────────────────────────────── */
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f7f6f2;
+    --color-bg-tertiary: #edebe3;
+    --color-bg-inverse: #1a1a1a;
+
+    --color-text-primary: #1a1a1a;
+    --color-text-secondary: #595959;
+    --color-text-tertiary: #8a8a8a;
+    --color-text-inverse: #f7f6f2;
+
+    --color-border-tertiary: rgba(0, 0, 0, 0.08);
+    --color-border-secondary: rgba(0, 0, 0, 0.15);
+    --color-border-primary: rgba(0, 0, 0, 0.25);
+
+    --color-ir-navy: #1f3864;
+    --color-ir-navy-light: #2c4d8f;
+    --color-ir-gold: #c8893e;
+    --color-ir-gold-light: #e0a858;
+
+    --color-success: #1d9e75;
+    --color-success-bg: #e1f5ee;
+    --color-success-text: #085041;
+    --color-warning: #ef9f27;
+    --color-warning-bg: #faeeda;
+    --color-warning-text: #854f0b;
+    --color-danger: #d85a30;
+    --color-danger-bg: #faece7;
+    --color-danger-text: #993c1d;
+    --color-info: #378add;
+    --color-info-bg: #e6f1fb;
+    --color-info-text: #0c447c;
+
+    --color-chart-1: #1f3864;
+    --color-chart-2: #c8893e;
+    --color-chart-3: #1d9e75;
+    --color-chart-4: #7f77dd;
+    --color-chart-5: #d85a30;
+
+    --color-outcome-negative: #9b7b6e;
+  }
+
+  body {
+    background: white;
+    color: black;
+    font-size: 11pt;
+    line-height: 1.5;
+  }
+
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  /* Force the report column to fill the page so the sidebar,
+   * once hidden, doesn't leave a 1/3 empty gutter. */
+  [data-print-content] {
+    grid-column: 1 / -1 !important;
+    max-width: none !important;
+  }
+
+  /* Encourage cards / sections to break cleanly across pages
+   * rather than splitting mid-paragraph. */
+  article > section,
+  article li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Report-view tabs: the tabbed UI is a screen-only affordance.
+   * For print/PDF export we want the full report (every section)
+   * regardless of which tab the user happened to be viewing when
+   * they hit print. Each TabsContent uses `forceMount` so the
+   * inactive panels are mounted in the DOM; on screen they are
+   * hidden by the global `[data-state="inactive"]` rule above,
+   * and the rule below re-reveals them for the print export.
+   * The sibling-margin rule keeps adjacent sections from colliding
+   * once they all become visible blocks in the PDF.
+   *
+   * The tab strip itself is hidden via the `data-print-hide`
+   * attribute on the TabsList (handled by the generic rule above)
+   * AND a `print:hidden` Tailwind class — belt and suspenders so
+   * a future class-only refactor can't reintroduce the strip in
+   * the export. */
+  [data-slot="report"] [data-slot="tabs-content"][data-state="inactive"] {
+    display: block !important;
+  }
+  [data-slot="report"] [data-slot="tabs-content"] + [data-slot="tabs-content"] {
+    margin-top: 2rem;
+  }
+
+  a[href]::after {
+    content: "";
+  }
+}
