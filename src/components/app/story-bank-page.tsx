@@ -46,15 +46,6 @@ import type { StoryWithRebuildDto } from "@/lib/profiles/dto";
 import type { CritiqueResponse, SuggestedResponse } from "@/lib/rebuilds/schemas";
 import { STORY_THEMES } from "@/lib/profiles/themes";
 
-/**
- * Per-AI-draft credit cost surfaced in the UI. Mirrors
- * `REBUILD_CRITIQUE_CREDIT_COST` in `src/lib/credits/pricing.ts` —
- * the source of truth; the bank-surface draft endpoint shares the
- * same accumulator in v1. Mirrors `PER_CRITIQUE_CREDIT_COST` in
- * `rebuild-flow.tsx`.
- */
-const STORY_DRAFT_CREDIT_COST = 0.2;
-
 interface StoryBankPageProps {
   initialStories: StoryWithRebuildDto[];
   initialExcludeStories: boolean;
@@ -328,11 +319,6 @@ function StoryCard(props: {
     generatedAt: string,
   ) => void;
 }) {
-  // Used to nudge the (app) layout's server tree to re-render after
-  // a paid AI call so the AppHeader credit pill picks up the new
-  // `users.rebuild_critique_units` value. Without this the pill
-  // stays at the old "X.XX credits" reading even though the server
-  // already deducted 0.20 credits behind the click.
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -341,7 +327,6 @@ function StoryCard(props: {
   const [showSuggestion, setShowSuggestion] = useState(false);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
-  const [suggestOutOfCredits, setSuggestOutOfCredits] = useState(false);
   // Track guardrail state for the most recent in-session generate.
   // The cached suggestion on the row was generated at SOME prior
   // time; we don't know whether it passed guardrails (the API only
@@ -394,7 +379,6 @@ function StoryCard(props: {
    */
   async function handleGenerateSuggestion() {
     setSuggestError(null);
-    setSuggestOutOfCredits(false);
     setSyntheticSuggestion(null);
     setSuggestLoading(true);
     try {
@@ -435,29 +419,14 @@ function StoryCard(props: {
         response.aiSuggestedResponse,
         response.aiSuggestedResponseGeneratedAt,
       );
-      // Server charged 0.20 credits (or rolled over a whole credit
-      // on the 5th call) — refresh so the AppHeader pill re-reads
-      // the user row and shows the new effective decimal balance.
-      // Only on the success path: the synthetic-fallback branch
-      // returned early above without billing, so a refresh there
-      // would just be a wasted layout re-render.
       router.refresh();
       fireAnalytics("story_suggested_response_requested", {
         story_id: props.story.id,
         passed_guardrails: true,
       });
     } catch (err) {
-      // `postStorySuggestResponse` surfaces errors as
-      // `ApiError`. We special-case 402 / insufficient_credits
-      // so the UI can switch to the "Buy credits" affordance
-      // instead of the generic retry banner.
       if (err instanceof ApiError) {
-        if (err.status === 402 || err.code === "insufficient_credits") {
-          setSuggestOutOfCredits(true);
-          setSuggestError(err.message);
-        } else {
-          setSuggestError(err.message);
-        }
+        setSuggestError(err.message);
       } else {
         setSuggestError("We couldn't generate an AI draft. Try again.");
       }
@@ -711,17 +680,6 @@ function StoryCard(props: {
           ) : null}
         </div>
 
-        {/* Cost hint next to the "Generate AI suggested response"
-            button. Only shown when that button is rendered — i.e.,
-            when there's no cached suggestion to "View" yet. Once the
-            user has a cached suggestion, the panel below has its own
-            "Regenerate" affordance with its own cost context. */}
-        {!cachedSuggestion ? (
-          <p className="mt-2 text-xs text-muted-foreground">
-            Each AI draft costs {STORY_DRAFT_CREDIT_COST.toFixed(2)} credits.
-          </p>
-        ) : null}
-
         {showCritique && rebuild?.aiCritique ? (
           <div className="mt-4 rounded-lg border border-border/60 bg-background p-4">
             <CritiqueView critique={rebuild.aiCritique} variant="compact" />
@@ -742,43 +700,25 @@ function StoryCard(props: {
                   ? "This is a scaffold — fill in the placeholders, or regenerate after adding more profile detail."
                   : "Want a fresh draft? Regenerate against your current profile."}
               </p>
-              <div className="flex flex-col items-end gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleGenerateSuggestion}
-                  disabled={suggestLoading}
-                >
-                  {suggestLoading ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden />
-                  ) : (
-                    <RotateCw className="size-4" aria-hidden />
-                  )}
-                  Regenerate
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Each AI draft costs {STORY_DRAFT_CREDIT_COST.toFixed(2)}{" "}
-                  credits.
-                </p>
-              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleGenerateSuggestion}
+                disabled={suggestLoading}
+              >
+                {suggestLoading ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <RotateCw className="size-4" aria-hidden />
+                )}
+                Regenerate
+              </Button>
             </div>
           </div>
         ) : null}
 
-        {suggestOutOfCredits ? (
-          <div className="mt-3 flex flex-col gap-2 rounded-lg border border-rose-300/60 bg-rose-50/60 p-3 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between dark:border-rose-700/40 dark:bg-rose-950/30 dark:text-rose-200">
-            <div className="flex items-start gap-2">
-              <XCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <span>
-                You&apos;re out of credits. Top up to generate AI drafts.
-              </span>
-            </div>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/credits/buy">Buy credits</Link>
-            </Button>
-          </div>
-        ) : suggestError ? (
+        {suggestError ? (
           <div className="mt-3 rounded-lg border border-rose-300/60 bg-rose-50/60 p-3 text-sm text-rose-900 dark:border-rose-700/40 dark:bg-rose-950/30 dark:text-rose-200">
             <XCircle className="mr-2 inline size-4" aria-hidden />
             {suggestError}
@@ -870,10 +810,6 @@ function StoryForm(props: {
   onSave: (data: StoryFormData) => Promise<void>;
   onCancel: () => void;
 }) {
-  // Same reasoning as in `StoryCard` — the form-time AI draft
-  // surface deducts 0.20 credits per call against the shared
-  // accumulator, so we need to nudge the (app) layout to re-render
-  // and pick up the new effective balance for the AppHeader pill.
   const router = useRouter();
   const [data, setData] = useState<StoryDraftFormData>(() => ({
     title: props.initial?.title ?? "",
@@ -888,7 +824,6 @@ function StoryForm(props: {
   const [error, setError] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
-  const [draftOutOfCredits, setDraftOutOfCredits] = useState(false);
   const [draftCaveat, setDraftCaveat] = useState<string | null>(null);
 
   // ── Critique state ────────────────────────────────────────────
@@ -897,12 +832,9 @@ function StoryForm(props: {
   const [critiquePassedGuardrails, setCritiquePassedGuardrails] = useState(true);
   const [critiqueLoading, setCritiqueLoading] = useState(false);
   const [critiqueError, setCritiqueError] = useState<string | null>(null);
-  const [critiqueOutOfCredits, setCritiqueOutOfCredits] = useState(false);
-
   // ── Enhance state ─────────────────────────────────────────────
   const [enhanceLoading, setEnhanceLoading] = useState(false);
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
-  const [enhanceOutOfCredits, setEnhanceOutOfCredits] = useState(false);
   const [preEnhanceDraft, setPreEnhanceDraft] =
     useState<StoryDraftFormData | null>(null);
   const [undoAvailable, setUndoAvailable] = useState(false);
@@ -928,7 +860,6 @@ function StoryForm(props: {
    */
   async function handleGenerateDraft() {
     setDraftError(null);
-    setDraftOutOfCredits(false);
     setDraftCaveat(null);
     const trimmedTitle = data.title.trim();
     if (!trimmedTitle) {
@@ -965,10 +896,6 @@ function StoryForm(props: {
       setDraftCaveat(
         "AI draft inserted. Edit each field to make it yours — interviewers can tell when answers aren't authentic.",
       );
-      // Server charged 0.20 credits (or rolled over a whole credit
-      // on the 5th call) — refresh so the AppHeader pill updates.
-      // The synthetic-fallback branch already returned above; only
-      // the grounded-success path lands here.
       router.refresh();
       fireAnalytics("story_draft_generated", {
         theme: props.theme,
@@ -976,12 +903,7 @@ function StoryForm(props: {
       });
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.status === 402 || err.code === "insufficient_credits") {
-          setDraftOutOfCredits(true);
-          setDraftError(err.message);
-        } else {
-          setDraftError(err.message);
-        }
+        setDraftError(err.message);
       } else {
         setDraftError("We couldn't generate an AI draft. Try again.");
       }
@@ -992,7 +914,6 @@ function StoryForm(props: {
 
   async function handleGetCritique() {
     setCritiqueError(null);
-    setCritiqueOutOfCredits(false);
     setCritiqueLoading(true);
     try {
       const response = await postStoryCritique({
@@ -1012,12 +933,7 @@ function StoryForm(props: {
       });
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.status === 402 || err.code === "insufficient_credits") {
-          setCritiqueOutOfCredits(true);
-          setCritiqueError(err.message);
-        } else {
-          setCritiqueError(err.message);
-        }
+        setCritiqueError(err.message);
       } else {
         setCritiqueError("We couldn't generate a critique. Try again.");
       }
@@ -1029,7 +945,6 @@ function StoryForm(props: {
   async function handleApplyEnhancement() {
     if (!critiqueResult) return;
     setEnhanceError(null);
-    setEnhanceOutOfCredits(false);
     setEnhanceLoading(true);
     // Capture pre-enhance snapshot for undo.
     setPreEnhanceDraft({ ...data });
@@ -1067,12 +982,7 @@ function StoryForm(props: {
       // Clear snapshot — enhancement didn't apply.
       setPreEnhanceDraft(null);
       if (err instanceof ApiError) {
-        if (err.status === 402 || err.code === "insufficient_credits") {
-          setEnhanceOutOfCredits(true);
-          setEnhanceError(err.message);
-        } else {
-          setEnhanceError(err.message);
-        }
+        setEnhanceError(err.message);
       } else {
         setEnhanceError("We couldn't rewrite your draft. Try again.");
       }
@@ -1128,19 +1038,16 @@ function StoryForm(props: {
       onCancel={props.onCancel}
       aiDraftLoading={drafting}
       aiDraftError={draftError}
-      aiDraftOutOfCredits={draftOutOfCredits}
       aiDraftCaveat={draftCaveat}
       onGenerateAiDraft={handleGenerateDraft}
       storyCritiqueResult={critiqueResult}
       storyCritiquePassedGuardrails={critiquePassedGuardrails}
       storyCritiqueLoading={critiqueLoading}
       storyCritiqueError={critiqueError}
-      storyCritiqueOutOfCredits={critiqueOutOfCredits}
       canGetStoryCritique={canGetCritique}
       onGetStoryCritique={handleGetCritique}
       storyEnhanceLoading={enhanceLoading}
       storyEnhanceError={enhanceError}
-      storyEnhanceOutOfCredits={enhanceOutOfCredits}
       storyUndoAvailable={undoAvailable}
       onApplyStorySuggestions={handleApplyEnhancement}
       onUndoStoryEnhancement={handleUndoEnhancement}

@@ -106,14 +106,6 @@ function ProfileHeader({ user }: { user: UserDetail }) {
           label="Sessions (lifetime)"
           value={user.lifetime.sessionsCount.toLocaleString()}
         />
-        <Stat
-          label="Credits purchased"
-          value={user.lifetime.creditsPurchased.toLocaleString()}
-        />
-        <Stat
-          label="Total spent"
-          value={`₹${user.lifetime.totalSpentInr.toLocaleString("en-IN")}`}
-        />
       </dl>
 
       <div

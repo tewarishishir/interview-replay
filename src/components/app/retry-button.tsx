@@ -21,17 +21,12 @@ import { Button } from "@/components/ui/button";
  *      `complete + fallback` path). Server picks the target — the
  *      client doesn't need to know which.
  *   2. POST /api/sessions/:id/analyze
- *      Charges credits (flat 1 credit for re-analysis, duration-
- *      priced for first analyses) and triggers the analyze worker.
- *      A 402 means the user can't afford the run — we route them
- *      to `/credits/buy` the same way `AnalyzeButton` does.
+ *      Triggers the analyze worker.
  *   3. router.refresh()
  *      Stays on the session detail page; the next render shows
  *      the `AnalyzingPanel` (driven by the new `analyzing` state).
  *      Replaces the prior UX which pushed the user to `/submit`
- *      to re-confirm the credit cost — the failed/fallback copy
- *      surfaces the cost up front, so a second confirmation step
- *      was pure friction.
+ *      — a second confirmation step was pure friction.
  *
  * Why no `window.confirm`: this is an entirely safe action — the
  * session is already failed (or has a fallback stub), no data is
@@ -84,16 +79,6 @@ export function RetryButton({
             body: JSON.stringify({}),
           },
         );
-
-        if (analyzeRes.status === 402) {
-          // User can't afford the run — same race-handling as the
-          // standard analyze button. The reset already ran, so the
-          // session is now in `review` or `complete` (not `failed`),
-          // and the user can come back and click Retry again after
-          // buying credits.
-          router.push("/credits/buy");
-          return;
-        }
 
         if (!analyzeRes.ok) {
           const data = (await analyzeRes.json().catch(() => ({}))) as {

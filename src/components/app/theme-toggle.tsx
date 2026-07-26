@@ -72,9 +72,7 @@ export function ThemeToggle() {
       onClick={() => setTheme(nextPreference(theme))}
       aria-label={label}
       title={label}
-      // Match the credit pill's visual weight so the header reads as
-      // a balanced cluster of small affordances. Same hover/focus
-      // tokens as the nav links for consistency.
+      // Same hover/focus tokens as the nav links for consistency.
       className="
         inline-flex h-8 w-8 items-center justify-center rounded-full
         border border-border bg-muted text-muted-foreground

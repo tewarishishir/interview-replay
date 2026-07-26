@@ -39,13 +39,6 @@ import type { StoryTheme } from "@/lib/db/schema";
 import { STORY_FIELD_WORD_TARGETS, STORY_THEMES } from "@/lib/profiles/themes";
 import type { CritiqueResponse, SuggestedResponse } from "@/lib/rebuilds/schemas";
 
-/**
- * Credit cost constant shared by both form surfaces (0.20 credits
- * per critique / AI draft call). Mirrors `REBUILD_CRITIQUE_CREDIT_COST`
- * in `src/lib/credits/pricing.ts` — the server-side source of truth.
- */
-const AI_DRAFT_CREDIT_COST = 0.2;
-
 /* ────────────────────────────────────────────────────────────── */
 /* Public types                                                    */
 /* ────────────────────────────────────────────────────────────── */
@@ -85,7 +78,6 @@ export interface StoryDraftFormProps {
   suggestionGeneratedAt?: string | null;
   suggestionLoading?: boolean;
   suggestionError?: string | null;
-  suggestionOutOfCredits?: boolean;
   suggestionPassedGuardrails?: boolean;
   /**
    * True when the server returned 422 `profile_empty`: the user has
@@ -135,8 +127,6 @@ export interface StoryDraftFormProps {
   // Critique CTA
   critiqueLoading?: boolean;
   critiqueError?: string | null;
-  /** True when the user's credit balance is too low for a critique. */
-  critiqueOutOfCredits?: boolean;
   canSubmitCritique?: boolean;
   onSubmitCritique?: () => void;
 
@@ -148,7 +138,6 @@ export interface StoryDraftFormProps {
   // AI draft panel (create mode only)
   aiDraftLoading?: boolean;
   aiDraftError?: string | null;
-  aiDraftOutOfCredits?: boolean;
   aiDraftCaveat?: string | null;
   onGenerateAiDraft?: () => void;
 
@@ -157,8 +146,6 @@ export interface StoryDraftFormProps {
   storyCritiquePassedGuardrails?: boolean;
   storyCritiqueLoading?: boolean;
   storyCritiqueError?: string | null;
-  /** True when the user's credit balance is too low for a critique. */
-  storyCritiqueOutOfCredits?: boolean;
   /** True when the draft has enough content to critique. */
   canGetStoryCritique?: boolean;
   onGetStoryCritique?: () => void;
@@ -166,8 +153,6 @@ export interface StoryDraftFormProps {
   // Story-bank enhance (visible after critique returns)
   storyEnhanceLoading?: boolean;
   storyEnhanceError?: string | null;
-  /** True when the user's credit balance is too low for enhance. */
-  storyEnhanceOutOfCredits?: boolean;
   /** True during the 30s undo window after an enhance is applied. */
   storyUndoAvailable?: boolean;
   onApplyStorySuggestions?: () => void;
@@ -294,7 +279,6 @@ function RebuildForm(props: StoryDraftFormProps) {
         generatedAt={props.suggestionGeneratedAt ?? null}
         loading={props.suggestionLoading ?? false}
         error={props.suggestionError ?? null}
-        outOfCredits={props.suggestionOutOfCredits ?? false}
         passedGuardrails={props.suggestionPassedGuardrails ?? true}
         profileEmpty={props.suggestionProfileEmpty ?? false}
         expanded={props.suggestionExpanded ?? false}
@@ -303,29 +287,11 @@ function RebuildForm(props: StoryDraftFormProps) {
         onUseAsDraft={props.onUseSuggestionAsDraft}
       />
 
-      {props.critiqueOutOfCredits ? (
-        <div className="flex flex-col gap-3 rounded-lg border border-rose-300/60 bg-rose-50/60 p-4 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-2">
-            <XCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-            <div>
-              <p className="font-medium">You&apos;re out of credits.</p>
-              <p className="mt-0.5 text-rose-900/80">
-                Each critique costs {AI_DRAFT_CREDIT_COST.toFixed(2)} credits. Top up
-                to keep practicing.
-              </p>
-            </div>
-          </div>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/credits/buy">Buy credits</Link>
-          </Button>
+      {props.critiqueError && (
+        <div className="rounded-lg border border-rose-300/60 bg-rose-50/60 p-3 text-sm text-rose-900">
+          <XCircle className="mr-2 inline size-4" aria-hidden />
+          {props.critiqueError}
         </div>
-      ) : (
-        props.critiqueError && (
-          <div className="rounded-lg border border-rose-300/60 bg-rose-50/60 p-3 text-sm text-rose-900">
-            <XCircle className="mr-2 inline size-4" aria-hidden />
-            {props.critiqueError}
-          </div>
-        )
       )}
 
       {/*
@@ -463,8 +429,7 @@ function RebuildForm(props: StoryDraftFormProps) {
             </Button>
           )}
           <p className="text-xs text-muted-foreground">
-            Critique costs {AI_DRAFT_CREDIT_COST.toFixed(2)} credits. Saving
-            is free.
+            Saving is free.
           </p>
         </div>
       )}
@@ -525,20 +490,10 @@ function StoryBankForm(props: StoryDraftFormProps) {
               Generate AI draft
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Each AI draft costs {AI_DRAFT_CREDIT_COST.toFixed(2)} credits.
-          </p>
           {props.aiDraftCaveat ? (
             <p className="text-xs text-muted-foreground">{props.aiDraftCaveat}</p>
           ) : null}
-          {props.aiDraftOutOfCredits ? (
-            <div className="flex flex-col gap-2 rounded-md border border-rose-300/60 bg-rose-50/60 p-2 text-xs text-rose-900 sm:flex-row sm:items-center sm:justify-between dark:border-rose-700/40 dark:bg-rose-950/30 dark:text-rose-200">
-              <span>You&apos;re out of credits. Top up to keep drafting.</span>
-              <Button asChild variant="outline" size="sm">
-                <Link href="/credits/buy">Buy credits</Link>
-              </Button>
-            </div>
-          ) : props.aiDraftError ? (
+          {props.aiDraftError ? (
             <p className="text-xs text-rose-700 dark:text-rose-300" role="alert">
               {props.aiDraftError}
             </p>
@@ -617,23 +572,7 @@ function StoryBankForm(props: StoryDraftFormProps) {
               </div>
             </div>
 
-            {props.storyEnhanceOutOfCredits ? (
-              <div className="mt-3 flex flex-col gap-2 rounded-lg border border-rose-300/60 bg-rose-50/60 p-3 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between dark:border-rose-700/40 dark:bg-rose-950/30 dark:text-rose-200">
-                <div className="flex items-start gap-2">
-                  <XCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-                  <div>
-                    <p className="font-medium">You&apos;re out of credits.</p>
-                    <p className="mt-0.5 text-rose-900/80 dark:text-rose-200/80">
-                      Applying suggestions costs {AI_DRAFT_CREDIT_COST.toFixed(2)} credits.
-                      Top up to continue.
-                    </p>
-                  </div>
-                </div>
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/credits/buy">Buy credits</Link>
-                </Button>
-              </div>
-            ) : props.storyEnhanceError ? (
+            {props.storyEnhanceError ? (
               <div className="mt-3 rounded-lg border border-rose-300/60 bg-rose-50/60 p-3 text-sm text-rose-900 dark:border-rose-700/40 dark:bg-rose-950/30 dark:text-rose-200">
                 <XCircle className="mr-2 inline size-4" aria-hidden />
                 {props.storyEnhanceError}
@@ -669,38 +608,17 @@ function StoryBankForm(props: StoryDraftFormProps) {
                   Undo
                 </Button>
               )}
-              <p className="text-xs text-muted-foreground">
-                Costs {AI_DRAFT_CREDIT_COST.toFixed(2)} credits.
-              </p>
             </div>
           </div>
         </div>
       ) : null}
 
-      {/* Critique error/out-of-credits — only shown before any result */}
-      {!props.storyCritiqueResult && (
-        props.storyCritiqueOutOfCredits ? (
-          <div className="flex flex-col gap-2 rounded-lg border border-rose-300/60 bg-rose-50/60 p-3 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between dark:border-rose-700/40 dark:bg-rose-950/30 dark:text-rose-200">
-            <div className="flex items-start gap-2">
-              <XCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <div>
-                <p className="font-medium">You&apos;re out of credits.</p>
-                <p className="mt-0.5 text-rose-900/80 dark:text-rose-200/80">
-                  Each critique costs {AI_DRAFT_CREDIT_COST.toFixed(2)} credits.
-                  Top up to keep practicing.
-                </p>
-              </div>
-            </div>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/credits/buy">Buy credits</Link>
-            </Button>
-          </div>
-        ) : props.storyCritiqueError ? (
-          <div className="rounded-lg border border-rose-300/60 bg-rose-50/60 p-3 text-sm text-rose-900 dark:border-rose-700/40 dark:bg-rose-950/30 dark:text-rose-200">
-            <XCircle className="mr-2 inline size-4" aria-hidden />
-            {props.storyCritiqueError}
-          </div>
-        ) : null
+      {/* Critique error — only shown before any result */}
+      {!props.storyCritiqueResult && props.storyCritiqueError && (
+        <div className="rounded-lg border border-rose-300/60 bg-rose-50/60 p-3 text-sm text-rose-900 dark:border-rose-700/40 dark:bg-rose-950/30 dark:text-rose-200">
+          <XCircle className="mr-2 inline size-4" aria-hidden />
+          {props.storyCritiqueError}
+        </div>
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -725,11 +643,6 @@ function StoryBankForm(props: StoryDraftFormProps) {
               </>
             )}
           </Button>
-          {!props.storyCritiqueLoading && (
-            <p className="text-xs text-muted-foreground">
-              Costs {AI_DRAFT_CREDIT_COST.toFixed(2)} credits.
-            </p>
-          )}
         </div>
 
         {/* Primary CTAs: Cancel + Save */}
@@ -888,7 +801,6 @@ export function SuggestPanel(props: {
   generatedAt: string | null;
   loading: boolean;
   error: string | null;
-  outOfCredits: boolean;
   passedGuardrails: boolean;
   /**
    * True when the server returned 422 `profile_empty`. Renders an
@@ -961,10 +873,6 @@ export function SuggestPanel(props: {
         </div>
       </header>
 
-      <p className="mt-3 text-xs text-muted-foreground">
-        Each AI draft costs {AI_DRAFT_CREDIT_COST.toFixed(2)} credits.
-      </p>
-
       {props.profileEmpty ? (
         <div className="mt-4 rounded-lg border border-amber-300/60 bg-amber-50/60 p-4 text-sm text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-200">
           <div className="flex items-start gap-2">
@@ -986,22 +894,6 @@ export function SuggestPanel(props: {
               </div>
             </div>
           </div>
-        </div>
-      ) : props.outOfCredits ? (
-        <div className="mt-4 flex flex-col gap-3 rounded-lg border border-rose-300/60 bg-rose-50/60 p-4 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between dark:border-rose-700/40 dark:bg-rose-950/30 dark:text-rose-200">
-          <div className="flex items-start gap-2">
-            <XCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-            <div>
-              <p className="font-medium">You&apos;re out of credits.</p>
-              <p className="mt-0.5 text-rose-900/80 dark:text-rose-200/80">
-                Each AI draft costs {AI_DRAFT_CREDIT_COST.toFixed(2)} credits. Top
-                up to keep practicing.
-              </p>
-            </div>
-          </div>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/credits/buy">Buy credits</Link>
-          </Button>
         </div>
       ) : props.error ? (
         <div className="mt-4 rounded-lg border border-rose-300/60 bg-rose-50/60 p-3 text-sm text-rose-900 dark:border-rose-700/40 dark:bg-rose-950/30 dark:text-rose-200">

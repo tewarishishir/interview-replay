@@ -447,10 +447,7 @@ function ConsentStep({
               {isSubmitting ? "Starting…" : "Start session"}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            This will use 0 credits to start, and credits will be charged
-            only if you submit for analysis.
-          </p>
+          
         </div>
       </form>
     </Form>

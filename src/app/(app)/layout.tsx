@@ -34,8 +34,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // Revocation: the JWT is stateless, so a deleted/disabled user would
   // otherwise keep access until expiry. One small index lookup per
   // request closes that gap; it also doubles as the source for the
-  // header's display name + credit balance, so we'd be hitting the
-  // table either way.
+  // header's display name, so we'd be hitting the table either way.
   //
   // Note: we used to redirect to `/signin?reason=revoked` for a
   // distinct banner, but that param was user-controllable and so
@@ -74,8 +73,6 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           email: user.email,
           imageUrl: user.imageUrl,
         }}
-        creditBalance={user.creditBalance}
-        rebuildCritiqueUnits={user.rebuildCritiqueUnits}
       />
       <main className="flex-1">{children}</main>
       <FeedbackWidget userId={user.id} />

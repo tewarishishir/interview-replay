@@ -123,8 +123,7 @@ export async function postCritique(
   /**
    * `credit_balance` after the call, when a charge was attempted.
    * Null when no charge was attempted (guardrail trip / unknown
-   * route error short-circuit). The UI uses this to refresh the
-   * header credit pill without a follow-up `/api/me` fetch.
+   * route error short-circuit).
    */
   balanceAfter: number | null;
 }> {

@@ -19,9 +19,7 @@ interface SessionActionsProps {
  *   2. "Delete" — confirms via `window.confirm` (cheap, accessible),
  *      then DELETEs to /api/sessions/:id. Routes back to /dashboard.
  *
- * Re-analyze was removed: the "free within 24h" label was misleading
- * because the API still charged credits in some cases, so we cut the
- * entry point entirely rather than ship a half-trustworthy price.
+ * Re-analyze is handled via the /edit page.
  */
 export function SessionActions({ sessionId }: SessionActionsProps) {
   const router = useRouter();

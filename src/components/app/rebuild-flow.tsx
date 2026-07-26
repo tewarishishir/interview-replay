@@ -34,14 +34,6 @@ import { STORY_THEMES } from "@/lib/profiles/themes";
 import type { StoryTheme } from "@/lib/db/schema";
 import type { SuggestedResponse } from "@/lib/rebuilds/schemas";
 
-/**
- * Per-critique credit cost surfaced in the UI. Mirrors
- * `REBUILD_CRITIQUE_CREDIT_COST` in `src/lib/credits/pricing.ts` —
- * the source of truth. The route's 402 response carries
- * `perCritiqueCost` so a future drift between client and server is
- * runtime-detectable.
- */
-const PER_CRITIQUE_CREDIT_COST = 0.2;
 import type { CritiqueResponse } from "@/lib/rebuilds/schemas";
 import type { RebuildDto } from "@/lib/rebuilds/dto";
 import {
@@ -265,10 +257,6 @@ export function RebuildFlow(props: RebuildFlowProps) {
 
   const [critiqueLoading, setCritiqueLoading] = useState(false);
   const [critiqueError, setCritiqueError] = useState<string | null>(null);
-  // Tracked separately from `critiqueError` so the UI can render a
-  // distinct "out of credits + Buy credits CTA" instead of a plain
-  // error string.
-  const [outOfCredits, setOutOfCredits] = useState(false);
 
   /* ── AI suggested response ────────────────────────────────── */
 
@@ -277,9 +265,6 @@ export function RebuildFlow(props: RebuildFlowProps) {
   );
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
-  // Same reasoning as `outOfCredits` above — the 402 case has its
-  // own CTA and shouldn't be flattened into the generic error.
-  const [suggestOutOfCredits, setSuggestOutOfCredits] = useState(false);
   const [suggestPassedGuardrails, setSuggestPassedGuardrails] = useState(true);
   // True when the server returned 422 `profile_empty`: profile has
   // no resume, projects, or stories to ground the draft on.
@@ -287,7 +272,6 @@ export function RebuildFlow(props: RebuildFlowProps) {
 
   const generateSuggestion = async () => {
     setSuggestError(null);
-    setSuggestOutOfCredits(false);
     setSuggestProfileEmpty(false);
     setSuggestLoading(true);
     try {
@@ -314,13 +298,6 @@ export function RebuildFlow(props: RebuildFlowProps) {
       setRebuild(response.rebuild);
       setSuggestPassedGuardrails(true);
       setSuggestExpanded(true);
-      // Re-render the (app) layout's server tree so the AppHeader
-      // credit pill re-reads `users.rebuild_critique_units` and
-      // shows the new effective decimal balance (each successful
-      // call bumps the accumulator by 0.20 credits, or rolls over
-      // a whole credit on the 5th call). Without this the pill
-      // stays frozen at the value it had on initial page load and
-      // users can't tell their click was billed.
       router.refresh();
       fireAnalytics("rebuild_suggested_response_requested", {
         suggestion_runs_last_24h: response.rebuild.suggestionRunsLast24h,
@@ -328,10 +305,7 @@ export function RebuildFlow(props: RebuildFlowProps) {
       });
     } catch (err) {
       if (err instanceof RebuildApiError) {
-        if (err.status === 402 || err.code === "insufficient_credits") {
-          setSuggestOutOfCredits(true);
-          setSuggestError(err.message);
-        } else if (err.code === "profile_empty") {
+        if (err.code === "profile_empty") {
           setSuggestProfileEmpty(true);
         } else {
           setSuggestError(err.message);
@@ -410,7 +384,6 @@ export function RebuildFlow(props: RebuildFlowProps) {
 
   const requestCritique = async () => {
     setCritiqueError(null);
-    setOutOfCredits(false);
     setCritiqueLoading(true);
     try {
       await flushNow();
@@ -421,14 +394,6 @@ export function RebuildFlow(props: RebuildFlowProps) {
       } = await postCritique(rebuild.id);
       setRebuild(next);
       setStep(5);
-      // Re-render the (app) layout's server tree so the AppHeader
-      // credit pill re-reads `users.rebuild_critique_units` and
-      // shows the new effective decimal balance. The server now
-      // charges on every successful click (including the fallback
-      // path — see the route's charging docstring), so we always
-      // refresh on success. Without this the pill stays frozen at
-      // its initial value and users perceive the deduction as
-      // missing even though it landed in the DB.
       router.refresh();
       fireAnalytics("rebuild_critique_requested", {
         critique_count: next.critiqueRunCount,
@@ -437,12 +402,7 @@ export function RebuildFlow(props: RebuildFlowProps) {
       });
     } catch (err) {
       if (err instanceof RebuildApiError) {
-        if (err.status === 402 || err.code === "insufficient_credits") {
-          setOutOfCredits(true);
-          setCritiqueError(err.message);
-        } else {
-          setCritiqueError(err.message);
-        }
+        setCritiqueError(err.message);
       } else {
         setCritiqueError("We couldn't generate your critique. Try again.");
       }
@@ -454,7 +414,6 @@ export function RebuildFlow(props: RebuildFlowProps) {
   /* ── Step 5: enhance (apply suggestions) ────────────────── */
   const [enhanceLoading, setEnhanceLoading] = useState(false);
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
-  const [enhanceOutOfCredits, setEnhanceOutOfCredits] = useState(false);
 
   /**
    * Snapshot of draft fields captured just before an enhance call
@@ -471,7 +430,6 @@ export function RebuildFlow(props: RebuildFlowProps) {
 
   const applyEnhancement = async () => {
     setEnhanceError(null);
-    setEnhanceOutOfCredits(false);
     setEnhanceLoading(true);
     try {
       // Flush any pending draft edits so the server state matches
@@ -498,7 +456,6 @@ export function RebuildFlow(props: RebuildFlowProps) {
       setResult(r.result ?? "");
       setWhatIWouldChange(r.whatIWouldChange ?? "");
 
-      // Re-render the (app) layout so the credit pill refreshes.
       router.refresh();
 
       fireAnalytics("rebuild_enhance_applied", {
@@ -514,12 +471,7 @@ export function RebuildFlow(props: RebuildFlowProps) {
       // If the enhance fails, clear the snapshot we just set.
       setPreEnhanceDraft(null);
       if (err instanceof RebuildApiError) {
-        if (err.status === 402 || err.code === "insufficient_credits") {
-          setEnhanceOutOfCredits(true);
-          setEnhanceError(err.message);
-        } else {
-          setEnhanceError(err.message);
-        }
+        setEnhanceError(err.message);
       } else {
         setEnhanceError("We couldn't rewrite your draft. Try again.");
       }
@@ -650,14 +602,12 @@ export function RebuildFlow(props: RebuildFlowProps) {
           savingState={savingState}
           critiqueLoading={critiqueLoading}
           critiqueError={critiqueError}
-          outOfCredits={outOfCredits}
           canSubmit={canRequestCritique}
           aiSuggestedResponse={rebuild.aiSuggestedResponse}
           suggestionGeneratedAt={rebuild.aiSuggestedResponseGeneratedAt}
           suggestionRunsLast24h={rebuild.suggestionRunsLast24h}
           suggestionLoading={suggestLoading}
           suggestionError={suggestError}
-          suggestionOutOfCredits={suggestOutOfCredits}
           suggestionPassedGuardrails={suggestPassedGuardrails}
           suggestionProfileEmpty={suggestProfileEmpty}
           suggestionExpanded={suggestExpanded}
@@ -714,7 +664,6 @@ export function RebuildFlow(props: RebuildFlowProps) {
           onApplyEnhance={applyEnhancement}
           enhanceLoading={enhanceLoading}
           enhanceError={enhanceError}
-          enhanceOutOfCredits={enhanceOutOfCredits}
           canUndo={preEnhanceDraft !== null}
           onUndo={undoEnhancement}
         />
@@ -971,14 +920,12 @@ function ScaffoldStep(props: {
   savingState: "idle" | "saving" | "error";
   critiqueLoading: boolean;
   critiqueError: string | null;
-  outOfCredits: boolean;
   canSubmit: boolean;
   aiSuggestedResponse: SuggestedResponse | null;
   suggestionGeneratedAt: string | null;
   suggestionRunsLast24h: number;
   suggestionLoading: boolean;
   suggestionError: string | null;
-  suggestionOutOfCredits: boolean;
   suggestionPassedGuardrails: boolean;
   suggestionProfileEmpty: boolean;
   suggestionExpanded: boolean;
@@ -1021,7 +968,6 @@ function ScaffoldStep(props: {
       suggestionGeneratedAt={props.suggestionGeneratedAt}
       suggestionLoading={props.suggestionLoading}
       suggestionError={props.suggestionError}
-      suggestionOutOfCredits={props.suggestionOutOfCredits}
       suggestionPassedGuardrails={props.suggestionPassedGuardrails}
       suggestionProfileEmpty={props.suggestionProfileEmpty}
       suggestionExpanded={props.suggestionExpanded}
@@ -1034,7 +980,6 @@ function ScaffoldStep(props: {
       initialSaveTheme={props.initialSaveTheme}
       critiqueLoading={props.critiqueLoading}
       critiqueError={props.critiqueError}
-      critiqueOutOfCredits={props.outOfCredits}
       canSubmitCritique={props.canSubmit}
       onSubmitCritique={props.onSubmit}
     />
@@ -1054,7 +999,6 @@ function CritiqueStep({
   onApplyEnhance,
   enhanceLoading,
   enhanceError,
-  enhanceOutOfCredits,
   canUndo,
   onUndo,
 }: {
@@ -1068,7 +1012,6 @@ function CritiqueStep({
   onApplyEnhance: () => void;
   enhanceLoading: boolean;
   enhanceError: string | null;
-  enhanceOutOfCredits: boolean;
   canUndo: boolean;
   onUndo: () => void;
 }) {
@@ -1101,29 +1044,11 @@ function CritiqueStep({
           </div>
         </div>
 
-        {enhanceOutOfCredits ? (
-          <div className="mt-4 flex flex-col gap-3 rounded-lg border border-rose-300/60 bg-rose-50/60 p-3 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-2">
-              <XCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <div>
-                <p className="font-medium">You&apos;re out of credits.</p>
-                <p className="mt-0.5 text-rose-900/80">
-                  Applying suggestions costs {PER_CRITIQUE_CREDIT_COST.toFixed(2)} credits. Top up
-                  to continue.
-                </p>
-              </div>
-            </div>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/credits/buy">Buy credits</Link>
-            </Button>
+        {enhanceError && (
+          <div className="mt-4 rounded-lg border border-rose-300/60 bg-rose-50/60 p-3 text-sm text-rose-900">
+            <XCircle className="mr-2 inline size-4" aria-hidden />
+            {enhanceError}
           </div>
-        ) : (
-          enhanceError && (
-            <div className="mt-4 rounded-lg border border-rose-300/60 bg-rose-50/60 p-3 text-sm text-rose-900">
-              <XCircle className="mr-2 inline size-4" aria-hidden />
-              {enhanceError}
-            </div>
-          )
         )}
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -1155,9 +1080,6 @@ function CritiqueStep({
               Undo
             </Button>
           )}
-          <p className="text-xs text-muted-foreground">
-            Costs {PER_CRITIQUE_CREDIT_COST.toFixed(2)} credits.
-          </p>
         </div>
       </div>
 

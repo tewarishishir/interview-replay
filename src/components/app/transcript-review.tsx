@@ -20,7 +20,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DeleteSessionButton } from "@/components/app/delete-session-button";
-import { transcriptionFeeForDelete } from "@/lib/credits/pricing";
 import type { SerializedArtifact } from "@/lib/sessions/artifact-serializer";
 
 /**
@@ -385,15 +384,6 @@ export function TranscriptReview({
           sessionId={session.id}
           confirmMessage="Delete this session? Your recording and transcript will be removed and you'll lose any edits. This can't be undone."
           disabled={status.kind === "pending"}
-          // Review page is always state="review" (the server bounces
-          // anything else here), so the only variable left for the
-          // fee is the recording length. Compute the fee from the
-          // same helper the API uses so the warning panel only fires
-          // when an actual charge will land.
-          transcriptionFee={transcriptionFeeForDelete(
-            "review",
-            transcript?.durationSeconds ?? null,
-          )}
         />
         <Button
           type="button"

@@ -419,7 +419,7 @@ function EmptyQuestionsPlaceholder({
  *
  *   - 202: route to the session detail page so the existing
  *     analyzing poller takes over.
- *   - 402: route to /credits/buy.
+ *   - Non-2xx: surface error inline.
  *   - other failure: surface inline; the user can still re-
  *     analyze via the standard session-actions menu.
  *
@@ -443,10 +443,6 @@ function ReanalyzeButton({ sessionId }: { sessionId: string }) {
         });
       } catch {
         setError("Couldn't reach the server. Check your connection.");
-        return;
-      }
-      if (res.status === 402) {
-        router.push("/credits/buy");
         return;
       }
       if (!res.ok) {

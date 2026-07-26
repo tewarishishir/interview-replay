@@ -33,7 +33,6 @@ import type { SerializedArtifact } from "@/lib/sessions/artifact-serializer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DeleteSessionButton } from "@/components/app/delete-session-button";
-import { transcriptionFeeForDelete } from "@/lib/credits/pricing";
 const ALLOWED_IMAGE_MIMES = [
   "image/png",
   "image/jpeg",
@@ -431,23 +430,12 @@ export function SessionAugment({
         </Button>
       </div>
 
-      {/*
-        Delete escape-hatch. We only surface it while the session is
-        still in `review` — once analysis kicks off the candidate has
-        committed credits and the report page owns the delete CTA.
-        Anchored to its own row so it doesn't visually compete with
-        the primary "Continue to analysis" CTA above.
-      */}
       {session.state === "review" && (
         <div className="mt-6 flex justify-start border-t border-border/40 pt-6">
           <DeleteSessionButton
             sessionId={session.id}
             confirmMessage="Delete this session? Your transcript and any context you've added will be removed. This can't be undone."
             disabled={status.kind === "saving"}
-            transcriptionFee={transcriptionFeeForDelete(
-              session.state,
-              session.transcriptDurationSeconds,
-            )}
           />
         </div>
       )}

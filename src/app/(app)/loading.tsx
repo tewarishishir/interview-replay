@@ -1,7 +1,7 @@
 /**
  * Skeleton shown while an authenticated route's RSC resolves. Kept
- * generic enough to fit the dashboard, sessions list, account, and
- * credits pages without looking out of place on any of them.
+ * generic enough to fit the dashboard, sessions list, and account
+ * pages without looking out of place on any of them.
  */
 export default function AppLoading() {
   return (

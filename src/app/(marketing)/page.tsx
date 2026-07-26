@@ -134,7 +134,7 @@ export default async function HomePage() {
           </div>
           {!isSignedIn && !features.inviteOnlyBeta && (
             <p className="mt-4 text-xs text-muted-foreground">
-              Free and open source. No credit card required.
+              Free and open source under the MIT license.
             </p>
           )}
           {!isSignedIn && features.inviteOnlyBeta && (
@@ -205,39 +205,6 @@ export default async function HomePage() {
               See a real sample →
             </Link>
           </p>
-        </div>
-      </section>
-
-      <section
-        id="demo"
-        aria-labelledby="demo-heading"
-        className="border-t border-border"
-      >
-        <div className="mx-auto max-w-4xl px-6 py-20">
-          <div className="mx-auto max-w-2xl text-center">
-            <h2
-              id="demo-heading"
-              className="text-3xl font-semibold tracking-tight sm:text-4xl"
-            >
-              See InterviewReplay in action
-            </h2>
-            <p className="mt-3 text-base text-muted-foreground">
-              A walkthrough of how to record your interview and read the
-              feedback report.
-            </p>
-          </div>
-
-          <div className="mt-10 overflow-hidden rounded-xl border border-border shadow-sm">
-            <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
-              <iframe
-                className="absolute inset-0 h-full w-full"
-                src="https://www.youtube.com/embed/fDIoQH67mGc?vq=hd4320"
-                title="How to use InterviewReplay — AI interview feedback walkthrough"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowFullScreen
-              />
-            </div>
-          </div>
         </div>
       </section>
 

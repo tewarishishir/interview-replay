@@ -44,8 +44,6 @@ interface DashboardSessionsListProps {
 interface DeleteResponse {
   ok?: boolean;
   alreadyDeleted?: boolean;
-  creditsCharged?: number;
-  balanceAfter?: number;
   message?: string;
 }
 
@@ -147,11 +145,9 @@ export function DashboardSessionsList({
   );
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  // `notice` carries a non-error confirmation message (e.g. "Deleted
-  // 3 sessions. 2 credits charged…"). It survives `exitSelectMode`
-  // so the user actually gets to read it after the toolbar collapses
-  // back to the default state. Cleared on the next `enterSelectMode`
-  // so a stale message doesn't follow the user across operations.
+  // `notice` carries a non-error confirmation message. It survives
+  // `exitSelectMode` so the user actually gets to read it after the
+  // toolbar collapses. Cleared on the next `enterSelectMode`.
   const [notice, setNotice] = useState<string | null>(null);
 
   // View / group / sort preferences. Hydrated from `localStorage`
@@ -229,19 +225,6 @@ export function DashboardSessionsList({
     return map;
   }, [sessions]);
 
-  // Any selected session in `review` state may trigger a transcription
-  // fee server-side. We don't have `durationSeconds` on the dashboard
-  // payload, so we err on the side of warning whenever ANY review-state
-  // row is selected and let the server compute the actual charge.
-  const reviewSelectedCount = useMemo(() => {
-    if (selectedCount === 0) return 0;
-    let n = 0;
-    for (const id of selectedIds) {
-      if (stateById.get(id) === "review") n += 1;
-    }
-    return n;
-  }, [selectedIds, selectedCount, stateById]);
-
   // Apply sort (always by `createdAt`) and bucket by the active
   // grouping mode. When the mode is "none" we return a single group
   // with a `null` label so the renderer can skip the section header.
@@ -297,8 +280,8 @@ export function DashboardSessionsList({
     setSelectedIds(new Set());
     setError(null);
     // Intentionally NOT clearing `notice` — it carries the
-    // post-delete confirmation (e.g. credits charged) and needs to
-    // survive the toolbar collapse so the user can read it.
+    // post-delete confirmation and needs to survive the toolbar
+    // collapse so the user can read it.
   }, []);
 
   const toggleOne = useCallback((id: string) => {
@@ -330,15 +313,7 @@ export function DashboardSessionsList({
         ? "Delete this session? The transcript and report will be removed."
         : `Delete ${selectedCount} sessions? Transcripts and reports for the selected sessions will be removed.`;
 
-    const fullMessage =
-      reviewSelectedCount > 0
-        ? `${baseMessage}\n\n` +
-          `Heads up: ${reviewSelectedCount} of the selected ${
-            reviewSelectedCount === 1 ? "session is" : "sessions are"
-          } awaiting review. ` +
-          `A small transcription fee may be charged for each of those to cover the transcription we already paid for. ` +
-          `If your balance is lower, we'll only charge what you have.`
-        : baseMessage;
+    const fullMessage = baseMessage;
 
     if (!window.confirm(fullMessage)) return;
 
@@ -353,7 +328,6 @@ export function DashboardSessionsList({
 
     startTransition(async () => {
       const failures: { id: string; kind: FailureKind; message: string }[] = [];
-      let totalCreditsCharged = 0;
       let rateLimited = false;
 
       for (const id of ids) {
@@ -375,12 +349,6 @@ export function DashboardSessionsList({
             .catch(() => ({}))) as DeleteResponse;
 
           if (res.ok) {
-            // The endpoint is idempotent: a second delete on a row
-            // already in `state=deleted` returns 200 with
-            // `creditsCharged=0`, so we can sum unconditionally.
-            if (typeof data.creditsCharged === "number") {
-              totalCreditsCharged += data.creditsCharged;
-            }
             continue;
           }
 
@@ -437,17 +405,6 @@ export function DashboardSessionsList({
       setSelectedIds(attemptedIds);
 
       if (failures.length === 0) {
-        // All-success path. Surface the aggregate billing impact so
-        // the user has a paper trail for the deduction without having
-        // to open the credits page. Routed through `notice` (not
-        // `error`) so the styling reads as confirmation, and so it
-        // survives `exitSelectMode`'s toolbar collapse.
-        if (totalCreditsCharged > 0) {
-          setNotice(
-            `Deleted ${succeeded} ${succeeded === 1 ? "session" : "sessions"}. ` +
-              `${formatCreditCount(totalCreditsCharged)} charged for transcriptions already paid.`,
-          );
-        }
         exitSelectMode();
         return;
       }
@@ -461,29 +418,22 @@ export function DashboardSessionsList({
         ? attemptedIds.size
         : failures.length;
 
-      const billingSuffix =
-        totalCreditsCharged > 0
-          ? ` (${formatCreditCount(totalCreditsCharged)} charged for the deletions that succeeded.)`
-          : "";
-
       if (succeeded === 0) {
         setError(
           `Couldn't delete ${failedCount} ${
             failedCount === 1 ? "session" : "sessions"
-          }: ${firstFailure?.message ?? "unknown error"}` + billingSuffix,
+          }: ${firstFailure?.message ?? "unknown error"}`,
         );
       } else {
         setError(
           `Deleted ${succeeded}, but ${failedCount} ${
             failedCount === 1 ? "session" : "sessions"
-          } failed: ${firstFailure?.message ?? "unknown error"}` +
-            billingSuffix,
+          } failed: ${firstFailure?.message ?? "unknown error"}`,
         );
       }
     });
   }, [
     exitSelectMode,
-    reviewSelectedCount,
     router,
     selectedCount,
     selectedIds,
@@ -748,8 +698,4 @@ export function DashboardSessionsList({
       </div>
     </>
   );
-}
-
-function formatCreditCount(n: number): string {
-  return `${n} credit${n === 1 ? "" : "s"}`;
 }

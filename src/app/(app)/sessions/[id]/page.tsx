@@ -497,9 +497,8 @@ function FailedPanel({ sessionId }: { sessionId: string }) {
     <div className="rounded-xl border border-rose-300/60 bg-rose-50/40 p-12 text-center">
       <h2 className="text-lg font-semibold">Analysis didn&apos;t complete</h2>
       <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-        Something went wrong on our end. Your credits have been refunded.
-        Retry analysis with the same transcript and artifacts — no need to
-        re-record. Re-analysis costs 1 credit.
+        Something went wrong on our end. Retry analysis with the same
+        transcript and artifacts — no need to re-record.
       </p>
       <div className="mt-6 inline-flex flex-col items-center gap-2">
         <RetryButton sessionId={sessionId} />
@@ -551,7 +550,7 @@ function StaleReportBanner({ sessionId }: { sessionId: string }) {
  * The worker writes a `buildFallbackReport(...)` row when the LLM
  * fails (validation, unavailable, onFailure rescue) and moves the
  * session to `complete` so the user lands on a real report page
- * with a refunded credit instead of the bare failed-panel. The
+ * instead of the bare failed-panel. The
  * stub's copy tells the user to retry — this banner is what makes
  * that instruction actionable. Rose-tinted to match the
  * `FailedPanel` aesthetic so the candidate reads it as "the same
@@ -577,9 +576,8 @@ function FallbackRetryBanner({ sessionId }: { sessionId: string }) {
             We couldn&apos;t generate a full report this time.
           </p>
           <p>
-            Your credit has been refunded. Retry to re-run analysis on the
-            same transcript and artifacts — no need to re-record.
-            Re-analysis costs 1 credit and most retries succeed on the
+            Retry to re-run analysis on the same transcript and
+            artifacts — no need to re-record. Most retries succeed on the
             second attempt.
           </p>
         </div>

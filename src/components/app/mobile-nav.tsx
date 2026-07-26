@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import {
   BookOpen,
-  CreditCard,
   LayoutDashboard,
   Menu,
   UserRound,
@@ -17,7 +16,6 @@ import { signOutAction } from "@/lib/auth/actions";
 import { cn } from "@/lib/utils";
 
 interface MobileNavProps {
-  creditLabel: string;
   userName: string | null;
   userEmail: string;
 }
@@ -26,20 +24,17 @@ const navLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/stories", label: "Story bank", icon: BookOpen },
   { href: "/profile", label: "Profile", icon: UserRound },
-  { href: "/credits/history", label: "Credits", icon: CreditCard },
 ] as const;
 
-export function MobileNav({ creditLabel, userName, userEmail }: MobileNavProps) {
+export function MobileNav({ userName, userEmail }: MobileNavProps) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const pathname = usePathname();
 
-  // Close on route change
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
 
-  // Prevent body scroll when drawer is open
   useEffect(() => {
     if (open) {
       document.body.style.overflow = "hidden";
@@ -53,7 +48,6 @@ export function MobileNav({ creditLabel, userName, userEmail }: MobileNavProps) 
 
   return (
     <>
-      {/* Hamburger button — visible only on small screens */}
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -64,7 +58,6 @@ export function MobileNav({ creditLabel, userName, userEmail }: MobileNavProps) 
         <Menu className="size-5" aria-hidden />
       </button>
 
-      {/* Backdrop */}
       {open && (
         <div
           className="fixed inset-0 z-[60] bg-black/50 sm:hidden"
@@ -73,7 +66,6 @@ export function MobileNav({ creditLabel, userName, userEmail }: MobileNavProps) 
         />
       )}
 
-      {/* Side drawer */}
       <div
         className={cn(
           "fixed inset-y-0 left-0 z-[70] flex w-72 flex-col bg-background shadow-xl transition-transform duration-300 ease-in-out sm:hidden",
@@ -83,7 +75,6 @@ export function MobileNav({ creditLabel, userName, userEmail }: MobileNavProps) 
         aria-modal="true"
         aria-label="Navigation menu"
       >
-        {/* Drawer header */}
         <div className="flex h-16 items-center justify-between border-b border-border px-4">
           <span className="text-sm font-medium text-foreground">
             {userName ?? userEmail}
@@ -98,18 +89,6 @@ export function MobileNav({ creditLabel, userName, userEmail }: MobileNavProps) 
           </button>
         </div>
 
-        {/* Credit badge */}
-        <div className="px-4 pt-4">
-          <Link
-            href="/credits/history"
-            onClick={() => setOpen(false)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-foreground hover:bg-accent transition-colors tabular-nums"
-          >
-            {creditLabel}
-          </Link>
-        </div>
-
-        {/* Nav links */}
         <nav aria-label="Mobile primary" className="flex-1 overflow-y-auto px-3 py-4">
           {navLinks.map((link) => (
             <Link
@@ -129,7 +108,6 @@ export function MobileNav({ creditLabel, userName, userEmail }: MobileNavProps) 
           ))}
         </nav>
 
-        {/* Sign out */}
         <div className="border-t border-border p-4">
           <p className="mb-3 truncate text-xs text-muted-foreground">{userEmail}</p>
           <button

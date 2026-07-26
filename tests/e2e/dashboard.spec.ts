@@ -1,7 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import {
-  SEED_CREDITS,
   SEED_EMAIL,
   SEED_PASSWORD,
   sampleSessions,
@@ -14,15 +13,14 @@ import {
  * using the credentials seeded by `tests/e2e/global-setup.ts`. After
  * landing on `/dashboard` the test asserts:
  *
- *  - The credit-balance pill in the header (matches `SEED_CREDITS`)
  *  - All seeded sessions render as cards
  *  - At least one card has the "Completed" status pill (Acme + Stripe
  *    are seeded `completed`)
  *  - Clicking a session card navigates to `/sessions/{id}`
  *
  * Seed constants are imported directly from the seed script so any
- * change to credits/companies/etc. updates both the seed and this
- * test in lockstep — no silent drift between fixture and assertion.
+ * change to companies/etc. updates both the seed and this test
+ * in lockstep — no silent drift between fixture and assertion.
  */
 
 const seededCompanies = sampleSessions.map((s) => s.companyName);
@@ -79,12 +77,6 @@ test.describe("authenticated dashboard", () => {
 
     await expect(
       page.getByRole("heading", { name: /^Dashboard$/i, level: 1 }),
-    ).toBeVisible();
-
-    // Credit-balance pill: pulls the count from the seed constant so
-    // the assertion text stays accurate when SEED_CREDITS changes.
-    await expect(
-      page.getByLabel(`${SEED_CREDITS} credits available`, { exact: true }),
     ).toBeVisible();
 
     // Every seeded session renders. Using Playwright's plain-string

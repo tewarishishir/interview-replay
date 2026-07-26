@@ -1,4 +1,3 @@
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { eq } from "drizzle-orm";
@@ -11,15 +10,9 @@ import {
 } from "@/lib/compliance";
 import { db, schema } from "@/lib/db";
 import {
-  buildReferralLink,
-  ensureReferralCodeForUser,
-  getReferralStats,
-} from "@/lib/referrals";
-import {
   AccountDeletionSection,
   AccountRestoreBanner,
 } from "@/components/app/account-section";
-import { ReferralSection } from "@/components/app/referral-section";
 import { ThemeSection } from "@/components/app/theme-section";
 
 export const metadata: Metadata = {
@@ -38,11 +31,9 @@ export default async function AccountPage() {
       id: schema.users.id,
       email: schema.users.email,
       name: schema.users.name,
-      creditBalance: schema.users.creditBalance,
       createdAt: schema.users.createdAt,
       deletedAt: schema.users.deletedAt,
       deletionRequestedAt: schema.users.deletionRequestedAt,
-      termsAcceptedAt: schema.users.termsAcceptedAt,
     })
     .from(schema.users)
     .where(eq(schema.users.id, userId))
@@ -57,31 +48,12 @@ export default async function AccountPage() {
     deletionRequestedAt: user.deletionRequestedAt,
   });
 
-  // Referral code + stats for the "Invite friends" panel. The
-  // ensure helper is idempotent — it returns the existing code
-  // when the user already has one and mints a fresh one only on
-  // first read for accounts that pre-date migration `0017`.
-  const [referralCode, referralStats] = await Promise.all([
-    ensureReferralCodeForUser(userId),
-    getReferralStats(userId),
-  ]);
-  const requestHeaders = await headers();
-  const proto = requestHeaders.get("x-forwarded-proto") ?? "https";
-  const host =
-    requestHeaders.get("x-forwarded-host") ??
-    requestHeaders.get("host") ??
-    null;
-  const referralLink = buildReferralLink({
-    code: referralCode,
-    origin: host ? `${proto}://${host}` : null,
-  });
-
   return (
     <section className="mx-auto max-w-3xl px-6 py-12">
       <header className="border-b border-border pb-6">
         <h1 className="text-3xl font-semibold tracking-tight">Account</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Profile and account deletion.
+          Profile and account settings.
         </p>
       </header>
 
@@ -102,22 +74,11 @@ export default async function AccountPage() {
               label="Display name"
               value={user.name ?? <em className="not-italic text-muted-foreground">not set</em>}
             />
-            <Field label="Credit balance" value={`${user.creditBalance}`} />
             <Field
               label="Joined"
               value={<LocalTime date={user.createdAt} options={{ year: "numeric", month: "long", day: "numeric" }} />}
             />
-            
           </dl>
-        </Card>
-
-        <Card heading="Invite friends, earn credits">
-          <ReferralSection
-            code={referralCode}
-            link={referralLink}
-            refereesCount={referralStats.refereesCount}
-            creditsEarned={referralStats.creditsEarned}
-          />
         </Card>
 
         <Card heading="Appearance">
@@ -138,10 +99,7 @@ export default async function AccountPage() {
                 period. During that window, signing back in cancels the
                 deletion. After it expires, we permanently delete your
                 profile, sessions, transcripts, artifacts, and reports.
-                Financial records (purchases, ledger entries) are
-                anonymized but kept for tax compliance.
               </p>
-              
               <div className="mt-4">
                 <AccountDeletionSection
                   graceDays={ACCOUNT_DELETION_GRACE_DAYS}

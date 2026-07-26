@@ -26,18 +26,7 @@ function SubmitButton() {
   );
 }
 
-export function SignUpForm({
-  referralCode,
-}: {
-  /**
-   * Server-validated referral code captured from `?ref=CODE` on the
-   * signup page. When present we render a hidden `<input name="ref">`
-   * so `signUpAction` plumbs it into `createCredentialsUser`. When
-   * null (organic signup, junk code, or unknown referrer) we render
-   * nothing extra.
-   */
-  referralCode?: string | null;
-}) {
+export function SignUpForm() {
   const [serverState, formAction] = useActionState(
     signUpAction,
     INITIAL_STATE,
@@ -78,9 +67,6 @@ export function SignUpForm({
 
   return (
     <form action={formAction} onSubmit={handleSubmit} className="space-y-4" noValidate>
-      {referralCode && (
-        <input type="hidden" name="ref" value={referralCode} />
-      )}
       <div className="space-y-1.5">
         <Label htmlFor={nameId}>
           Name <span className="text-muted-foreground">(optional)</span>

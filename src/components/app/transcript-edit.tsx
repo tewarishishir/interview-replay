@@ -8,33 +8,9 @@ import {
   Loader2,
   RefreshCw,
   Save,
-  Wallet,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-
-/**
- * Post-analysis "edit call text & re-analyze" surface.
- *
- * Reachable from the report sidebar once a session is `complete`.
- * Two responsibilities:
- *
- *   1. Let the candidate read and tweak `edited_text`. Auto-save
- *      mirrors the cadence on the pre-analysis review screen
- *      (debounced ~1.5s). The same PATCH endpoint backs both
- *      surfaces; the server now allows edits from `complete` so
- *      the candidate doesn't have to drop back to a draft state
- *      to fix a typo.
- *
- *   2. Re-run analysis. The CTA shows the worst-case price (the
- *      credits the user would owe outside the 24h free window) so
- *      they're never surprised by a charge they didn't expect.
- *      A confirm dialog spells out the exact amount that will be
- *      consumed *this* click before we POST. If the API ends up
- *      charging zero (free re-analysis), the user gets a happy
- *      surprise rather than a "wait, why did that cost something"
- *      moment.
- */
 
 const AUTOSAVE_DEBOUNCE_MS = 1_500;
 
@@ -55,34 +31,12 @@ interface TranscriptDto {
 export interface TranscriptEditProps {
   sessionId: string;
   transcript: TranscriptDto;
-  /**
-   * Worst-case price (what the user would owe outside the 24h
-   * free window). `null` when we couldn't compute a price — over
-   * the 120-minute cap, zero-duration, etc. — in which case the
-   * action is disabled.
-   */
-  baseCredits: number | null;
-  /**
-   * What the API will actually consume on a click right now: 0
-   * inside the 24h free window, otherwise equal to `baseCredits`.
-   */
-  discountedCredits: number;
-  /** Whether `discountedCredits` reflects the 24h free discount. */
-  free: boolean;
-  /** Whether the user has enough credits to cover `discountedCredits`. */
-  canAfford: boolean;
-  creditBalance: number;
   overLimit: boolean;
 }
 
 export function TranscriptEdit({
   sessionId,
   transcript,
-  baseCredits,
-  discountedCredits,
-  free,
-  canAfford,
-  creditBalance,
   overLimit,
 }: TranscriptEditProps) {
   const router = useRouter();
@@ -153,10 +107,6 @@ export function TranscriptEdit({
     [sessionId],
   );
 
-  // Debounced auto-save. Mirrors the pre-analysis review screen so
-  // edits land even if the user navigates away without clicking
-  // "Re-analyze". The report on /sessions/:id will pick up a stale
-  // banner if the saved text is newer than the last report.
   useEffect(() => {
     if (text === lastSavedRef.current) return;
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -186,29 +136,13 @@ export function TranscriptEdit({
   }, [save, text]);
 
   const reanalyzeDisabled =
-    analyzePending ||
-    overLimit ||
-    baseCredits === null ||
-    !canAfford ||
-    status.kind === "pending";
+    analyzePending || overLimit || status.kind === "pending";
 
   const handleReanalyze = useCallback(() => {
     if (reanalyzeDisabled) return;
 
-    // Spell out the exact charge before any commit. We use the
-    // discounted price (what will actually leave the user's
-    // balance) — `baseCredits` is what they'd see on the button
-    // when there's no discount. If the discount applies, the
-    // dialog says "no charge" and the button still shows the
-    // worst-case so it stays an honest ceiling.
-    const chargeLine =
-      discountedCredits === 0
-        ? "This is your one free re-run for this session — no credits will be charged. Any future re-analysis will be billed at the full price."
-        : `This will charge ${discountedCredits} credit${
-            discountedCredits === 1 ? "" : "s"
-          } from your balance of ${creditBalance}.`;
     const message =
-      `Re-analyze this interview based on the current transcript text?\n\n${chargeLine}\n\n` +
+      "Re-analyze this interview based on the current transcript text?\n\n" +
       "We'll regenerate your report from scratch.";
     if (!window.confirm(message)) return;
 
@@ -216,10 +150,6 @@ export function TranscriptEdit({
     setAnalyzePending(true);
     void (async () => {
       try {
-        // Flush any pending edits before we hit the analyze
-        // endpoint so the new report is grounded against the text
-        // the user is looking at right now — not a debounced-but-
-        // not-yet-sent version that loses the race.
         if (text !== lastSavedRef.current) {
           if (debounceTimerRef.current) {
             clearTimeout(debounceTimerRef.current);
@@ -241,11 +171,6 @@ export function TranscriptEdit({
           body: JSON.stringify({}),
         });
 
-        if (res.status === 402) {
-          router.push("/credits/buy");
-          return;
-        }
-
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as {
             message?: string;
@@ -258,8 +183,6 @@ export function TranscriptEdit({
           return;
         }
 
-        // 202 Accepted — bounce to the detail page so the user
-        // sees the "we're analyzing" panel.
         router.push(`/sessions/${sessionId}`);
         router.refresh();
       } catch (err) {
@@ -268,23 +191,7 @@ export function TranscriptEdit({
         setAnalyzePending(false);
       }
     })();
-  }, [
-    creditBalance,
-    discountedCredits,
-    reanalyzeDisabled,
-    router,
-    save,
-    sessionId,
-    text,
-  ]);
-
-  const buttonLabel = (() => {
-    if (baseCredits === null) return "Re-analyze (unavailable)";
-    if (discountedCredits === 0) return "Re-analyze (free re-run)";
-    return `Re-analyze (${discountedCredits} credit${
-      discountedCredits === 1 ? "" : "s"
-    })`;
-  })();
+  }, [reanalyzeDisabled, router, save, sessionId, text]);
 
   return (
     <div className="mt-8 space-y-6">
@@ -338,55 +245,10 @@ export function TranscriptEdit({
       </div>
 
       <div className="rounded-xl border border-border bg-muted/30 p-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Re-analysis cost
-            </div>
-            <div className="mt-1 text-2xl font-semibold tracking-tight">
-              {baseCredits === null ? (
-                <span className="text-base font-normal text-muted-foreground">
-                  unavailable
-                </span>
-              ) : free ? (
-                <span>
-                  <span className="text-muted-foreground line-through">
-                    {baseCredits}
-                  </span>{" "}
-                  0 credits
-                </span>
-              ) : (
-                <span>
-                  {baseCredits} credit{baseCredits === 1 ? "" : "s"}
-                </span>
-              )}
-            </div>
-            {free ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                One free re-run per session, within 24 hours of your last
-                analysis. After this run, each re-analysis costs 1 credit.
-              </p>
-            ) : (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Re-analyzing this session costs 1 credit.
-              </p>
-            )}
-          </div>
-          <div className="text-right">
-            <div className="flex items-center justify-end gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <Wallet className="size-3.5" aria-hidden />
-              Your balance
-            </div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">
-              {creditBalance} credit{creditBalance === 1 ? "" : "s"}
-            </div>
-          </div>
-        </div>
-
         {overLimit && (
           <div
             role="alert"
-            className="mt-4 rounded-md border border-amber-300/60 bg-amber-50/60 p-3 text-sm text-amber-900"
+            className="mb-4 rounded-md border border-amber-300/60 bg-amber-50/60 p-3 text-sm text-amber-900"
           >
             This recording is longer than 120 minutes. Re-analysis tops out
             at the 120-minute bucket — please trim the recording in a new
@@ -394,7 +256,7 @@ export function TranscriptEdit({
           </div>
         )}
 
-        <div className="mt-5 flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             type="button"
             variant="primary"
@@ -410,25 +272,11 @@ export function TranscriptEdit({
             ) : (
               <>
                 <RefreshCw className="size-4" aria-hidden />
-                {buttonLabel}
+                Re-analyze
               </>
             )}
           </Button>
-          {!overLimit && baseCredits !== null && !canAfford && (
-            <Button asChild variant="outline" size="lg">
-              <a href="/credits/buy">Buy credits</a>
-            </Button>
-          )}
         </div>
-
-        {!overLimit && baseCredits !== null && !canAfford && (
-          <p className="mt-3 text-sm text-muted-foreground">
-            You need {Math.max(0, discountedCredits - creditBalance)} more
-            credit
-            {Math.max(0, discountedCredits - creditBalance) === 1 ? "" : "s"}{" "}
-            to re-analyze.
-          </p>
-        )}
 
         {analyzeError && (
           <p
