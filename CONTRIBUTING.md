@@ -15,7 +15,7 @@ Thanks for considering a contribution. This document covers the basics to get yo
 ### Getting started
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/interview-replay.git
+git clone https://github.com/tewarishishir/interview-replay.git
 cd interview-replay
 pnpm install
 
@@ -36,7 +36,7 @@ The app runs at `http://localhost:3000`. Sign in with the default admin credenti
 | Field | Value |
 |---|---|
 | Email | `admin@interview-replay.local` |
-| Password | `admin` |
+| Password | `admin123` |
 
 If you're only working on the UI or API routes, you don't need Ollama or faster-whisper installed. The app gracefully degrades — it shows placeholder reports when the LLM isn't available and skips transcription when whisper isn't installed.
 
@@ -146,10 +146,10 @@ src/
 
 ## Finding work
 
-- Check [open issues](https://github.com/YOUR_USERNAME/interview-replay/issues) for bugs and feature requests.
+- Check [open issues](https://github.com/tewarishishir/interview-replay/issues) for bugs and feature requests.
 - Issues labeled `good first issue` are a good starting point.
 - If you want to work on something that doesn't have an issue, open one first to discuss the approach.
 
 ## Questions?
 
-Open a [discussion](https://github.com/YOUR_USERNAME/interview-replay/discussions) or comment on the relevant issue. We're happy to help.
+Open a [discussion](https://github.com/tewarishishir/interview-replay/discussions) or comment on the relevant issue. We're happy to help.

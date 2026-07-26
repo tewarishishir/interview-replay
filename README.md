@@ -23,7 +23,7 @@ It supports coding, system design, behavioral, and general interview rounds, wit
 ## Quick Start (Docker)
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/interview-replay.git
+git clone https://github.com/tewarishishir/interview-replay.git
 cd interview-replay
 cp .env.example .env.local
 
@@ -51,9 +51,9 @@ After running `pnpm db:seed`, you can sign in with:
 | Field | Value |
 |---|---|
 | Email | `admin@interview-replay.local` |
-| Password | `admin` |
+| Password | `admin123` |
 
-This user is an admin with 99 credits. **Change these credentials before deploying to production.**
+This user has admin access. **Change these credentials before deploying to production.**
 
 See [docs/self-hosting.md](docs/self-hosting.md) for GPU setup, reverse proxy configuration, and production deployment.
 

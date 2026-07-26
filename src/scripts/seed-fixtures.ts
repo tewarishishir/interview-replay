@@ -12,7 +12,7 @@
  */
 
 export const SEED_EMAIL = "admin@interview-replay.local";
-export const SEED_PASSWORD = "admin";
+export const SEED_PASSWORD = "admin123";
 export const SEED_NAME = "Admin";
 
 /**

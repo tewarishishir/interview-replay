@@ -103,11 +103,6 @@ export default async function HomePage() {
             projects, and the level you&apos;re targeting. Honest coaching,
             from what really happened.
           </p>
-          <p className="mt-3 text-sm text-muted-foreground/80">
-            <em>InterviewReplay</em> (अञ्जुरि) means &ldquo;cupped hands&rdquo; in
-            Sanskrit &mdash; the gesture of holding something precious to
-            examine it carefully.
-          </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
             {isSignedIn ? (
               <Button asChild size="lg" variant="primary">

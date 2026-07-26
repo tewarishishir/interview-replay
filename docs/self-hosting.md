@@ -32,7 +32,7 @@ The fastest path to a running instance.
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/interview-replay.git
+git clone https://github.com/tewarishishir/interview-replay.git
 cd interview-replay
 cp .env.example .env.local
 ```
@@ -137,7 +137,7 @@ sudo -u postgres psql -c "ALTER USER interview_replay PASSWORD 'your-password';"
 ### 3. Clone and build
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/interview-replay.git
+git clone https://github.com/tewarishishir/interview-replay.git
 cd interview-replay
 pnpm install
 pnpm build
