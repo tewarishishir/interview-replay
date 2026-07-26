@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "data_exports_user_in_flight_uniq" ON "data_exports" USING btree ("user_id") WHERE "data_exports"."status" IN ('pending', 'building');

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."credit_pack_type" ADD VALUE 'heavy_prep';

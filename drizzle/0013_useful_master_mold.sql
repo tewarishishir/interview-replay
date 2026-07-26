@@ -1,0 +1,1 @@
+ALTER TABLE "users" ALTER COLUMN "credit_balance" SET DEFAULT 10;

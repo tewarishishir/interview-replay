@@ -1,0 +1,2 @@
+ALTER TABLE "users" ADD CONSTRAINT "users_credit_balance_nonneg" CHECK ("users"."credit_balance" >= 0);--> statement-breakpoint
+ALTER TABLE "interview_sessions" ADD CONSTRAINT "interview_sessions_level_valid" CHECK ("interview_sessions"."level" IN ('junior', 'mid', 'senior', 'staff', 'principal', 'unsure'));
