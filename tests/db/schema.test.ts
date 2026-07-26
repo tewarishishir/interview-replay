@@ -1,19 +1,8 @@
-/**
- * Smoke tests against a real local Postgres:
- *   1. Every table accepts a minimal valid insert.
- *   2. Foreign-key cascade rules behave as declared in the schema.
- *
- * These tests intentionally talk to the real DB instead of mocking
- * Drizzle, because the things they're verifying (cascade/restrict
- * semantics, CHECK constraints, default values) live in Postgres, not
- * in the ORM.
- */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { count, eq, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 
 import { db, schema } from "@/lib/db";
-import { SIGNUP_BONUS_CREDITS } from "@/lib/auth/constants";
 
 import { ensureSchema, resetDatabase } from "./helpers";
 
@@ -31,12 +20,9 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  // node-postgres' Pool keeps the process alive; close it so vitest can exit.
-  // Lazily required to avoid a hard import on `pg` from the test boundary.
   const { default: pgMod } = await import("pg");
   const pools = (pgMod as unknown as { native?: unknown }) && undefined;
   void pools;
-  // The pool is owned by the global created in src/lib/db. Best-effort end:
   const g = globalThis as { __irPgPool?: { end: () => Promise<void> } };
   await g.__irPgPool?.end();
 });
@@ -71,16 +57,9 @@ const insertSession = async (userId: string) => {
 };
 
 describe("table inserts", () => {
-  it("users — defaults credit_balance to the signup bonus, free_credit_used=false", async () => {
+  it("users — creates a row with a valid uuid", async () => {
     const user = await insertUser();
     expect(user.id).toMatch(/^[0-9a-f-]{36}$/);
-    // Column default lives in the schema; the application constant
-    // mirrors it so the credit ledger's signup_bonus row matches.
-    // We assert against the constant here so a future bump to the
-    // bonus only needs to touch one place (constants.ts + the column
-    // default) and this test follows.
-    expect(user.creditBalance).toBe(SIGNUP_BONUS_CREDITS);
-    expect(user.freeCreditUsed).toBe(false);
     expect(user.createdAt).toBeInstanceOf(Date);
     expect(user.deletedAt).toBeNull();
   });
@@ -203,10 +182,6 @@ describe("table inserts", () => {
   });
 
   it("reports — accepts multiple rows per session (re-analysis is append-only)", async () => {
-    // Re-analysis no longer overwrites the prior report; each successful
-    // analysis APPENDS a new row. The schema must allow this. If a
-    // future migration accidentally re-introduces UNIQUE(session_id),
-    // the second insert would throw and this test would catch it.
     const user = await insertUser();
     const session = await insertSession(user.id);
 
@@ -248,55 +223,6 @@ describe("table inserts", () => {
       .from(schema.audioFiles)
       .where(eq(schema.audioFiles.sessionId, session.id));
     expect(row?.fileSizeBytes).toBe(sixGb);
-  });
-
-  it("credit_purchases — enforces unique txn_id", async () => {
-    const user = await insertUser();
-    await db.insert(schema.creditPurchases).values({
-      userId: user.id,
-      packType: "starter",
-      creditsPurchased: 10,
-      amountPaidPaise: 999,
-      txnId: "txn_dup",
-      status: "succeeded",
-      expiresAt: new Date(Date.now() + 365 * 86_400_000),
-    });
-
-    await expect(
-      db.insert(schema.creditPurchases).values({
-        userId: user.id,
-        packType: "starter",
-        creditsPurchased: 10,
-        amountPaidPaise: 999,
-        txnId: "txn_dup",
-        status: "succeeded",
-        expiresAt: new Date(Date.now() + 365 * 86_400_000),
-      }),
-    ).rejects.toThrow();
-  });
-
-  it("credit_transactions — bigserial id auto-increments", async () => {
-    const user = await insertUser();
-    const [t1] = await db
-      .insert(schema.creditTransactions)
-      .values({
-        userId: user.id,
-        delta: 10,
-        balanceAfter: 11,
-        reason: "signup_bonus",
-      })
-      .returning();
-    const [t2] = await db
-      .insert(schema.creditTransactions)
-      .values({
-        userId: user.id,
-        delta: -1,
-        balanceAfter: 10,
-        reason: "interview_charge",
-      })
-      .returning();
-    expect(t1?.id).toBe(1);
-    expect(t2?.id).toBe(2);
   });
 
   it("user_patterns — user_id is the PK", async () => {
@@ -396,45 +322,6 @@ describe("foreign-key behavior", () => {
     expect(await rowCount(schema.audioFiles)).toBe(0);
   });
 
-  it("deleting a user is RESTRICTed when credit_purchases exist", async () => {
-    const user = await insertUser();
-    await db.insert(schema.creditPurchases).values({
-      userId: user.id,
-      packType: "starter",
-      creditsPurchased: 10,
-      amountPaidPaise: 999,
-      txnId: "txn_restrict",
-      status: "succeeded",
-      expiresAt: new Date(Date.now() + 365 * 86_400_000),
-    });
-
-    await expect(
-      db.delete(schema.users).where(eq(schema.users.id, user.id)),
-    ).rejects.toThrow();
-  });
-
-  it("deleting an interview_session NULLs out credit_transactions.related_session_id (preserves ledger)", async () => {
-    const user = await insertUser();
-    const session = await insertSession(user.id);
-
-    await db.insert(schema.creditTransactions).values({
-      userId: user.id,
-      delta: -1,
-      balanceAfter: 0,
-      reason: "interview_charge",
-      relatedSessionId: session.id,
-    });
-
-    await db
-      .delete(schema.interviewSessions)
-      .where(eq(schema.interviewSessions.id, session.id));
-
-    const [tx] = await db.select().from(schema.creditTransactions);
-    expect(tx?.relatedSessionId).toBeNull();
-    // Ledger row itself must survive — never deleted.
-    expect(tx?.delta).toBe(-1);
-  });
-
   it("deleting a user nulls out audit_log.user_id (preserves audit history)", async () => {
     const user = await insertUser();
     await db.insert(schema.auditLog).values({
@@ -451,8 +338,6 @@ describe("foreign-key behavior", () => {
   });
 
   it("partial index `interview_sessions_user_created_idx` is registered with WHERE deleted_at IS NULL", async () => {
-    // Sanity check that the migration actually shipped the partial index
-    // — this is a regression guard for the indexes block in interviews.ts.
     const { rows } = await db.execute<{ indexdef: string }>(sql`
       SELECT indexdef FROM pg_indexes
       WHERE schemaname = 'public'
@@ -462,11 +347,6 @@ describe("foreign-key behavior", () => {
   });
 
   it("composite index `reports_session_created_idx` is (session_id, created_at DESC)", async () => {
-    // Powers the session detail page's report enumeration (ORDER BY
-    // created_at DESC) for the full "Previous analyses" history, as
-    // well as LIMIT 1 latest-only fetches elsewhere. Both rely on the
-    // DESC direction being encoded in the index; if migration 0016
-    // ever ships without it, this test catches the regression.
     const { rows } = await db.execute<{ indexdef: string }>(sql`
       SELECT indexdef FROM pg_indexes
       WHERE schemaname = 'public'
@@ -478,10 +358,6 @@ describe("foreign-key behavior", () => {
   });
 
   it("`reports_session_id_unique` constraint was dropped (multi-row append-only)", async () => {
-    // Defense-in-depth complement to the multi-row insert test above:
-    // we explicitly assert the unique constraint is GONE, so a future
-    // schema-regen that quietly re-adds `.unique()` to `sessionId`
-    // would fail here even before any insert path is exercised.
     const { rows } = await db.execute<{ conname: string }>(sql`
       SELECT conname FROM pg_constraint
       WHERE conname = 'reports_session_id_unique'
@@ -490,10 +366,6 @@ describe("foreign-key behavior", () => {
   });
 
   it("`feedback_rating_valid` CHECK enforces rating ∈ [1,5]", async () => {
-    // Defense in depth: the zod schema rejects out-of-range
-    // ratings at the API edge, but a future code path that
-    // bypasses zod (manual SQL, an job runner worker, a Server
-    // Action that builds a raw INSERT) must still be blocked.
     const { rows } = await db.execute<{ pg_get_constraintdef: string }>(sql`
       SELECT pg_get_constraintdef(oid)
       FROM pg_constraint
@@ -516,12 +388,6 @@ describe("foreign-key behavior", () => {
   });
 
   it("`feedback_approved_idx` is partial — approved + consent_public only", async () => {
-    // Powers the future testimonials query. The partial WHERE
-    // clause is the whole point — without it the index would
-    // surface every approved row regardless of consent, and a
-    // future code path could accidentally render a user's
-    // feedback publicly. This test is the regression guard for
-    // that shape.
     const { rows } = await db.execute<{ indexdef: string }>(sql`
       SELECT indexdef FROM pg_indexes
       WHERE schemaname = 'public'

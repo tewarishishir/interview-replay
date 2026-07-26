@@ -5,8 +5,9 @@ import { ArrowLeft } from "lucide-react";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
-import { MAX_BILLABLE_SECONDS } from "@/lib/credits";
 import { getSessionForReview } from "@/lib/queries/transcripts";
+
+const MAX_RECORDING_SECONDS = 7200;
 import { CompanyLogo } from "@/components/app/company-logo";
 import { TranscriptEdit } from "@/components/app/transcript-edit";
 
@@ -48,7 +49,7 @@ export default async function EditSessionPage({ params }: PageProps) {
   }
 
   const durationSeconds = transcript.durationSeconds;
-  const overLimit = durationSeconds > MAX_BILLABLE_SECONDS;
+  const overLimit = durationSeconds > MAX_RECORDING_SECONDS;
 
   return (
     <section className="mx-auto max-w-4xl px-6 py-10">

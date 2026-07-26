@@ -5,12 +5,6 @@ import { z } from "zod";
 import { ANALYTICS_EVENTS } from "@/lib/analytics/events";
 import { trackServerEvent } from "@/lib/analytics/server";
 import { getActiveUserId } from "@/lib/auth/session";
-import {
-  chargeRebuildCritique,
-  InsufficientCreditsError,
-  previewRebuildCritiqueCost,
-  REBUILD_CRITIQUE_CREDIT_COST,
-} from "@/lib/credits";
 import { LlmNotConfiguredError } from "@/lib/llm";
 import { rebuildCritiqueLimiter } from "@/lib/rate-limit";
 import { critiqueResponseSchema } from "@/lib/rebuilds/schemas";
@@ -147,37 +141,6 @@ export async function POST(request: Request): Promise<Response> {
     throw err;
   }
 
-  // Credit preflight — same logic as critique route.
-  let costPreview: Awaited<ReturnType<typeof previewRebuildCritiqueCost>>;
-  try {
-    costPreview = await previewRebuildCritiqueCost({ userId });
-  } catch (err) {
-    console.error("[story_enhance_preflight]", err);
-    return NextResponse.json(
-      {
-        error: "service_unavailable",
-        message:
-          "We couldn't check your credit balance right now. Try again in a moment.",
-      },
-      { status: 503 },
-    );
-  }
-  if (!costPreview) return UNAUTHORIZED();
-  if (!costPreview.canAffordNext) {
-    return NextResponse.json(
-      {
-        error: "insufficient_credits",
-        message:
-          `You're out of credits. Applying suggestions costs ${REBUILD_CRITIQUE_CREDIT_COST.toFixed(2)} credits ` +
-          `— top up to continue.`,
-        required: costPreview.wouldChargeCredits,
-        available: costPreview.currentBalance,
-        perCritiqueCost: REBUILD_CRITIQUE_CREDIT_COST,
-      },
-      { status: 402 },
-    );
-  }
-
   // Run the LLM enhancement. No fallback: if the model can't
   // produce a valid rewrite, return 502 the user can retry.
   let result;
@@ -208,32 +171,10 @@ export async function POST(request: Request): Promise<Response> {
     throw err;
   }
 
-  // Charge the user after a successful LLM call.
-  let creditsCharged: 0 | 1 = 0;
-  let balanceAfter: number | null = null;
-  try {
-    const charge = await chargeRebuildCritique({
-      userId,
-      surface: { kind: "story_enhance" },
-    });
-    creditsCharged = charge.creditsCharged;
-    balanceAfter = charge.balanceAfter;
-  } catch (err) {
-    if (err instanceof InsufficientCreditsError) {
-      console.warn("[story_enhance] charge race skipped", {
-        required: err.required,
-        available: err.available,
-      });
-    } else {
-      console.error("[story_enhance_charge]", err);
-    }
-  }
-
   trackServerEvent({
     distinctId: userId,
     event: ANALYTICS_EVENTS.storyEnhanceApplied,
     properties: {
-      credits_charged: creditsCharged,
       model_version: result.modelVersion,
       prompt_version: result.promptVersion,
     },
@@ -248,8 +189,6 @@ export async function POST(request: Request): Promise<Response> {
         result: result.enhanced.result,
         whatILearned: result.enhanced.what_i_learned ?? "",
       },
-      creditsCharged,
-      balanceAfter,
     },
     { status: 200, headers: { "Cache-Control": "no-store, must-revalidate" } },
   );

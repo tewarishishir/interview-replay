@@ -333,7 +333,7 @@ describe("findExpiredExports / markExportExpired", () => {
 });
 
 describe("collectUserDataForExport", () => {
-  it("returns just the profile when no sessions/credits exist", async () => {
+  it("returns just the profile when no sessions exist", async () => {
     const user = await insertUser("solo@example.com");
     const dump = await collectUserDataForExport(user.id);
 
@@ -348,8 +348,6 @@ describe("collectUserDataForExport", () => {
     expect(dump.audioFiles).toEqual([]);
     expect(dump.outcomes).toEqual([]);
     expect(dump.rebuilds).toEqual([]);
-    expect(dump.creditPurchases).toEqual([]);
-    expect(dump.creditTransactions).toEqual([]);
     expect(typeof dump.exportedAt).toBe("string");
   });
 
@@ -430,8 +428,6 @@ describe("buildExportZip", () => {
       audioFiles: [],
       outcomes: [],
       rebuilds: [],
-      creditPurchases: [],
-      creditTransactions: [],
       exportedAt: "2026-05-01T00:00:00.000Z",
     };
 
@@ -447,8 +443,6 @@ describe("buildExportZip", () => {
         "README.txt",
         "artifacts.json",
         "audio_files.json",
-        "credit_purchases.json",
-        "credit_transactions.json",
         "outcomes.json",
         "profile.json",
         "rebuilds.json",
@@ -483,8 +477,6 @@ describe("buildExportZip", () => {
       audioFiles: [],
       outcomes: [],
       rebuilds: [],
-      creditPurchases: [],
-      creditTransactions: [],
       exportedAt: "2026-05-01T00:00:00.000Z",
     };
 

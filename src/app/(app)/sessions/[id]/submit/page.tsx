@@ -5,8 +5,9 @@ import { ArrowLeft, Clock, FileText, Layers } from "lucide-react";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
-import { MAX_BILLABLE_SECONDS } from "@/lib/credits";
 import { getSessionForReview } from "@/lib/queries/transcripts";
+
+const MAX_RECORDING_SECONDS = 7200;
 import { eq, desc } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { AnalyzeButton } from "@/components/app/analyze-button";
@@ -93,7 +94,7 @@ export default async function SubmitSessionPage({ params }: PageProps) {
   }
 
   const durationSeconds = transcript.durationSeconds;
-  const overLimit = durationSeconds > MAX_BILLABLE_SECONDS;
+  const overLimit = durationSeconds > MAX_RECORDING_SECONDS;
 
   return (
     <section className="mx-auto max-w-2xl px-6 py-12">

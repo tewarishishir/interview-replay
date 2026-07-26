@@ -1,6 +1,6 @@
 "use server";
 
-import { cookies, headers } from "next/headers";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { AuthError } from "next-auth";
@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 
 import { db, schema } from "@/lib/db";
 
-import { features, isProduction } from "@/lib/env";
+import { features } from "@/lib/env";
 import {
   ipFromHeaders,
   oauthLimiter,
@@ -18,11 +18,6 @@ import {
   signInLimiter,
   signUpLimiter,
 } from "@/lib/rate-limit";
-import {
-  normalizeReferralCode,
-  REFERRAL_COOKIE_MAX_AGE_SECONDS,
-  REFERRAL_COOKIE_NAME,
-} from "@/lib/referrals";
 import { sanitizeCallback } from "@/lib/safe-redirect";
 
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "./constants";
@@ -163,22 +158,10 @@ export async function signUpAction(
 
   const { name, email, password } = parsed.data;
 
-  // Optional `ref` field is the referral code captured by the
-  // signup page from `?ref=CODE` and rendered as a hidden input.
-  // Junk values are validated downstream by `normalizeReferralCode`
-  // and silently ignored, so we don't gate signup on the code.
-  const rawRef = formData.get("ref");
-  const referralCode = typeof rawRef === "string" && rawRef.length > 0 ? rawRef : null;
-
-  // All DB work + verification email lives in `createCredentialsUser`
-  // so the same code path runs in tests as in production. Pass the
-  // rate-limit IP through so the GeoIP-based signup_country_code
-  // stamp lands in the same transaction as the user row.
   const result = await createCredentialsUser({
     email,
     password,
     name: name && name.length > 0 ? name : null,
-    referralCode,
     signupHeaders,
     signupIp: ip,
   });
@@ -317,24 +300,6 @@ export async function googleSignInAction(formData: FormData): Promise<void> {
     // page renders only known error codes from a whitelist so this
     // can't be repurposed to display arbitrary text.
     redirect(`/signin?error=rate_limited`);
-  }
-
-  // Carry the referral code across the Google round-trip via a
-  // short-lived first-party cookie. The OAuth provider strips
-  // query strings from the redirect target, so this is the only
-  // place we can stash the value before bouncing through Google.
-  // `events.createUser` reads + clears it on the way back.
-  const rawRef = formData.get("ref");
-  const ref = normalizeReferralCode(rawRef);
-  if (ref) {
-    const cookieStore = await cookies();
-    cookieStore.set(REFERRAL_COOKIE_NAME, ref, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: isProduction,
-      path: "/",
-      maxAge: REFERRAL_COOKIE_MAX_AGE_SECONDS,
-    });
   }
 
   const callbackUrl = sanitizeCallback(formData.get("callbackUrl"));

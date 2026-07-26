@@ -14,7 +14,6 @@
 export const SEED_EMAIL = "admin@interview-replay.local";
 export const SEED_PASSWORD = "admin";
 export const SEED_NAME = "Admin";
-export const SEED_CREDITS = 99;
 
 /**
  * Sample sessions to render on the dashboard. The mix is deliberate —
@@ -34,7 +33,6 @@ export const sampleSessions = [
     roundType: "system_design" as const,
     state: "complete" as const,
     daysAgo: 1,
-    creditsCharged: 1,
   },
   {
     companyName: "Razorpay",
@@ -43,7 +41,6 @@ export const sampleSessions = [
     roundType: "coding" as const,
     state: "complete" as const,
     daysAgo: 5,
-    creditsCharged: 2,
   },
   {
     companyName: "Zomato",
@@ -52,7 +49,6 @@ export const sampleSessions = [
     roundType: "behavioral" as const,
     state: "analyzing" as const,
     daysAgo: 0,
-    creditsCharged: 1,
   },
   {
     companyName: "Google",
@@ -61,7 +57,6 @@ export const sampleSessions = [
     roundType: "behavioral" as const,
     state: "created" as const,
     daysAgo: 0,
-    creditsCharged: null,
   },
 ] as const;
 

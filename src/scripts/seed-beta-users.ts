@@ -3,8 +3,7 @@
  *
  * Creates N (default 10) credentials users with strong random
  * passwords, marks them email-verified (so they skip the verify-email
- * gate), grants the standard signup bonus, mints a referral code, and
- * writes the cleartext credentials to a gitignored file under
+ * gate), and writes the cleartext credentials to a gitignored file under
  * `tmp/beta-credentials.txt` so the operator can share them through a
  * secure channel (1Password share, Bitwarden Send, etc.).
  *
@@ -21,7 +20,7 @@
  * surprise rows.
  *
  * Idempotent: re-running skips emails that already exist. The script
- * does NOT touch existing rows (no password reset, no credit top-up).
+ * does NOT touch existing rows (no password reset).
  * To rotate a beta password, delete the user first and re-run.
  */
 
@@ -33,8 +32,6 @@ import { eq } from "drizzle-orm";
 
 import { db, schema } from "../lib/db";
 import { hashPassword } from "../lib/auth/password";
-import { SIGNUP_BONUS_CREDITS } from "../lib/auth/constants";
-import { setReferralCodeOnTx } from "../lib/referrals";
 
 const BETA_USER_COUNT = 10;
 const BETA_EMAIL_DOMAIN = "localhost:3000";
@@ -107,7 +104,6 @@ async function seedOne(n: number): Promise<SeedResult> {
         name: `Beta Tester ${String(n).padStart(2, "0")}`,
         passwordHash,
         emailVerified: new Date(),
-        creditBalance: SIGNUP_BONUS_CREDITS,
       })
       .returning({ id: schema.users.id });
 
@@ -115,26 +111,14 @@ async function seedOne(n: number): Promise<SeedResult> {
       throw new Error(`seedBetaUsers: INSERT returned no row for ${email}`);
     }
 
-    if (SIGNUP_BONUS_CREDITS > 0) {
-      await tx.insert(schema.creditTransactions).values({
-        userId: created.id,
-        delta: SIGNUP_BONUS_CREDITS,
-        balanceAfter: SIGNUP_BONUS_CREDITS,
-        reason: "signup_bonus",
-      });
-    }
-
     await tx.insert(schema.auditLog).values({
       eventType: "auth.signup",
       eventData: {
         email,
         user_id: created.id,
-        credits_granted: SIGNUP_BONUS_CREDITS,
         source: "beta_seed_script",
       },
     });
-
-    await setReferralCodeOnTx(tx, created.id);
   });
 
   return { email, password, status: "created" };

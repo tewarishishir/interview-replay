@@ -17,7 +17,6 @@ import {
   createCredentialsUser,
   verifyCredentials,
 } from "@/lib/auth/users";
-import { SIGNUP_BONUS_CREDITS } from "@/lib/auth/constants";
 import { signUpFormSchema } from "@/lib/auth/schemas";
 
 import { ensureSchema, resetDatabase } from "../db/helpers";
@@ -36,7 +35,7 @@ afterAll(async () => {
 });
 
 describe("signup", () => {
-  it("creates a user with the signup bonus credits and a matching ledger row", async () => {
+  it("creates a user with the correct email and name", async () => {
     const result = await createCredentialsUser({
       email: "alice@example.com",
       password: "supersecret1",
@@ -45,7 +44,6 @@ describe("signup", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.user.creditBalance).toBe(SIGNUP_BONUS_CREDITS);
     expect(result.user.email).toBe("alice@example.com");
     expect(result.user.name).toBe("Alice Example");
 
@@ -55,16 +53,6 @@ describe("signup", () => {
       .where(eq(schema.users.id, result.user.id))
       .limit(1);
     expect(row?.passwordHash).toMatch(/^\$argon2id\$/);
-    expect(row?.creditBalance).toBe(SIGNUP_BONUS_CREDITS);
-
-    const ledger = await db
-      .select()
-      .from(schema.creditTransactions)
-      .where(eq(schema.creditTransactions.userId, result.user.id));
-    expect(ledger).toHaveLength(1);
-    expect(ledger[0]?.delta).toBe(SIGNUP_BONUS_CREDITS);
-    expect(ledger[0]?.balanceAfter).toBe(SIGNUP_BONUS_CREDITS);
-    expect(ledger[0]?.reason).toBe("signup_bonus");
   });
 
   it("normalizes the email to lowercase + trim", async () => {
@@ -92,7 +80,6 @@ describe("signup", () => {
     if (second.ok) return;
     expect(second.error).toBe("duplicate_email");
 
-    // Only one row should have been created end-to-end.
     const allUsers = await db.select().from(schema.users);
     expect(allUsers).toHaveLength(1);
   });
@@ -186,7 +173,6 @@ describe("signin (verifyCredentials)", () => {
     expect(result).not.toBeNull();
     expect(result?.email).toBe("bob@example.com");
     expect(result?.name).toBe("Bob");
-    // Never leak the password hash through the credentials return.
     expect(result as unknown as Record<string, unknown>).not.toHaveProperty(
       "passwordHash",
     );
@@ -217,9 +203,6 @@ describe("signin (verifyCredentials)", () => {
   });
 
   it("constant-ish-time on missing user vs bad password", async () => {
-    // Both should incur an argon2 verify of comparable cost. We assert
-    // the runtimes are within a factor of 4 — a generous bound that
-    // would still fail loudly if someone reverted the dummy-hash path.
     const t0 = performance.now();
     await verifyCredentials({
       email: "no-such-user@example.com",

@@ -5,12 +5,6 @@ import { z } from "zod";
 import { ANALYTICS_EVENTS } from "@/lib/analytics/events";
 import { trackServerEvent } from "@/lib/analytics/server";
 import { getActiveUserId } from "@/lib/auth/session";
-import {
-  chargeRebuildCritique,
-  InsufficientCreditsError,
-  previewRebuildCritiqueCost,
-  REBUILD_CRITIQUE_CREDIT_COST,
-} from "@/lib/credits";
 import { rebuildQuestionThemeSchema } from "@/lib/db/schema";
 import { LlmNotConfiguredError } from "@/lib/llm";
 import { rebuildCritiqueLimiter } from "@/lib/rate-limit";
@@ -184,40 +178,6 @@ export async function POST(
     throw err;
   }
 
-  // Credit preflight. Refuse before the LLM round-trip when the
-  // user can't afford the rollover charge.
-  let costPreview: Awaited<
-    ReturnType<typeof previewRebuildCritiqueCost>
-  >;
-  try {
-    costPreview = await previewRebuildCritiqueCost({ userId });
-  } catch (err) {
-    console.error("[story_suggest_preflight]", err);
-    return NextResponse.json(
-      {
-        error: "service_unavailable",
-        message:
-          "We couldn't check your credit balance right now. Try again in a moment.",
-      },
-      { status: 503 },
-    );
-  }
-  if (!costPreview) return UNAUTHORIZED();
-  if (!costPreview.canAffordNext) {
-    return NextResponse.json(
-      {
-        error: "insufficient_credits",
-        message:
-          `You're out of credits. Each AI draft costs ${REBUILD_CRITIQUE_CREDIT_COST.toFixed(2)} credits ` +
-          `— top up to keep practicing.`,
-        required: costPreview.wouldChargeCredits,
-        available: costPreview.currentBalance,
-        perCritiqueCost: REBUILD_CRITIQUE_CREDIT_COST,
-      },
-      { status: 402 },
-    );
-  }
-
   // Run the suggestion. The runner returns a synthetic fallback
   // (passedGuardrails: false) on parse / validation / verbatim
   // guardrail failures rather than throwing, so the user always
@@ -292,11 +252,6 @@ export async function POST(
         story: { id: story.id },
         syntheticSuggestion: result.suggestion,
         passedGuardrails: false,
-        creditsCharged: 0 as const,
-        balanceAfter: null,
-        // Echo the unchanged cached suggestion so a single
-        // wire-format covers both success and fallback paths and
-        // the client doesn't need to refetch on a fallback.
         aiSuggestedResponse: cachedAiSuggestedResponse,
         aiSuggestedResponseGeneratedAt: cachedAiSuggestedResponse
           ? story.aiSuggestedResponseGeneratedAt?.toISOString() ?? null
@@ -328,34 +283,6 @@ export async function POST(
 
   const updated = applied.row;
 
-  let creditsCharged: 0 | 1 = 0;
-  let balanceAfter: number | null = null;
-  try {
-    const charge = await chargeRebuildCritique({
-      userId,
-      // `surface` drives the audit log row's event_type
-      // (`story_suggest.credit_charged`) and event_data.storyId
-      // shape. Critical for dispute resolution: a support
-      // engineer querying audit_log can tell a story-side draft
-      // charge apart from a rebuild critique charge without
-      // having to back-reference the entity id against both
-      // `stories` and `story_rebuilds`.
-      surface: { kind: "story_suggest", storyId: story.id },
-    });
-    creditsCharged = charge.creditsCharged;
-    balanceAfter = charge.balanceAfter;
-  } catch (err) {
-    if (err instanceof InsufficientCreditsError) {
-      console.warn("[story_suggest] charge race skipped", {
-        storyId: story.id,
-        required: err.required,
-        available: err.available,
-      });
-    } else {
-      console.error("[story_suggest_charge]", err);
-    }
-  }
-
   trackServerEvent({
     distinctId: userId,
     event: ANALYTICS_EVENTS.storySuggestedResponseRequested,
@@ -365,7 +292,6 @@ export async function POST(
       passed_guardrails: true,
       model_version: result.modelVersion,
       prompt_version: result.promptVersion,
-      credits_charged: creditsCharged,
       sources_count: result.suggestion.sources.length,
       caveats_count: result.suggestion.caveats.length,
     },
@@ -376,8 +302,6 @@ export async function POST(
       story: { id: updated.id },
       syntheticSuggestion: null,
       passedGuardrails: true,
-      creditsCharged,
-      balanceAfter,
       aiSuggestedResponse: result.suggestion,
       aiSuggestedResponseGeneratedAt: at.toISOString(),
     },

@@ -4,15 +4,14 @@
  * Runs once before any e2e test. Currently it just re-runs the local
  * dev seed so the suite can rely on a known starting state — one user
  * (`SEED_EMAIL` / `SEED_PASSWORD` from `src/scripts/seed.ts`) with
- * `SEED_CREDITS` credits and the sample interview sessions defined
- * there.
+ * the sample interview sessions defined there.
  *
  * The seed itself is idempotent and refuses to run against non-local
  * DATABASE_URLs, so this is safe to leave wired in unconditionally.
  *
  * Side effect to note: re-running the seed wipes `interview_sessions`
- * and `credit_transactions` for the seed user. If a developer was
- * hand-poking the dashboard with custom rows for `test@interview-replay.local`,
+ * for the seed user. If a developer was hand-poking the dashboard
+ * with custom rows for `test@interview-replay.local`,
  * `pnpm test:e2e` will clear them.
  */
 import { execFile } from "node:child_process";

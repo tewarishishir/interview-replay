@@ -5,16 +5,13 @@ import { LocalTime } from "@/components/ui/local-time";
 
 import { getAdminUser } from "@/lib/admin/auth";
 import {
-  type CreditPurchaseStatus,
   type UserDetail,
   getUserDetail,
 } from "@/lib/admin/users-queries";
 import { ANALYTICS_EVENTS } from "@/lib/analytics/events";
 import { trackServerEvent } from "@/lib/analytics/server";
 import { OUTCOME_DISPLAY, type OutcomeType } from "@/lib/outcomes/colors";
-import { GrantCreditsForm } from "@/components/admin/users/grant-credits-form";
 import { NotesPanel } from "@/components/admin/users/notes-panel";
-import { RefundButton } from "@/components/admin/users/refund-button";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -49,17 +46,9 @@ export default async function AdminUserDetailPage({
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <section className="lg:col-span-2 flex flex-col gap-6">
           <SessionsCard sessions={detail.sessions} />
-          <PaymentsCard payments={detail.payments} />
         </section>
 
         <aside className="flex flex-col gap-6">
-          <Card title="Actions">
-            <GrantCreditsForm
-              userId={detail.id}
-              currentBalance={detail.creditBalance}
-            />
-          </Card>
-
           <Card title="Notes">
             <NotesPanel userId={detail.id} notes={detail.notes} />
           </Card>
@@ -101,7 +90,6 @@ function ProfileHeader({ user }: { user: UserDetail }) {
       </p>
 
       <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Credit balance" value={user.creditBalance.toLocaleString()} />
         <Stat
           label="Sessions (lifetime)"
           value={user.lifetime.sessionsCount.toLocaleString()}
@@ -247,101 +235,6 @@ function OutcomeBadge({ outcomeType }: { outcomeType: OutcomeType }) {
         }}
       />
       {display.label}
-    </span>
-  );
-}
-
-function PaymentsCard({ payments }: { payments: UserDetail["payments"] }) {
-  return (
-    <Card title={`Payments (${payments.length})`}>
-      {payments.length === 0 ? (
-        <p
-          className="text-sm italic"
-          style={{ color: "var(--color-text-tertiary)" }}
-        >
-          No payments yet.
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead style={{ color: "var(--color-text-tertiary)" }}>
-              <tr className="text-xs uppercase tracking-wide">
-                <th className="py-1.5 pr-3">Date</th>
-                <th className="py-1.5 pr-3">Pack</th>
-                <th className="py-1.5 pr-3 text-right">Amount</th>
-                <th className="py-1.5 pr-3">Status</th>
-                <th className="py-1.5 pr-3">Mode</th>
-                <th className="py-1.5 pr-3">Txn id</th>
-                <th className="py-1.5 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {payments.map((p) => (
-                <tr
-                  key={p.id}
-                  className="border-t"
-                  style={{ borderColor: "var(--color-border-tertiary)" }}
-                >
-                  <td className="py-1.5 pr-3 whitespace-nowrap">
-                    <LocalTime date={p.createdAt} options={{ year: "numeric", month: "short", day: "numeric" }} />
-                  </td>
-                  <td className="py-1.5 pr-3">{p.packType}</td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums">
-                    ₹{p.amountInr.toLocaleString("en-IN")}
-                  </td>
-                  <td className="py-1.5 pr-3">
-                    <PaymentStatusBadge status={p.status} />
-                  </td>
-                  <td
-                    className="py-1.5 pr-3 text-xs"
-                    style={{ color: "var(--color-text-tertiary)" }}
-                  >
-                    {p.paymentMode ?? "—"}
-                  </td>
-                  <td
-                    className="py-1.5 pr-3 font-mono text-xs"
-                    style={{ color: "var(--color-text-tertiary)" }}
-                  >
-                    {p.txnRef ?? "—"}
-                  </td>
-                  <td className="py-1.5 text-right">
-                    {p.status === "succeeded" && (
-                      <RefundButton
-                        purchaseId={p.id}
-                        txnRef={p.txnRef}
-                        txnId={p.txnId}
-                      />
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function PaymentStatusBadge({ status }: { status: CreditPurchaseStatus }) {
-  const { color, bg } = (() => {
-    switch (status) {
-      case "succeeded":
-        return { color: "var(--color-success-text)", bg: "var(--color-success-bg)" };
-      case "failed":
-        return { color: "var(--color-danger-text)", bg: "var(--color-danger-bg)" };
-      case "refunded":
-        return { color: "var(--color-warning-text)", bg: "var(--color-warning-bg)" };
-      default:
-        return { color: "var(--color-text-tertiary)", bg: "var(--color-bg-secondary)" };
-    }
-  })();
-  return (
-    <span
-      className="inline-block rounded-full px-2 py-0.5 text-xs"
-      style={{ color, background: bg }}
-    >
-      {status}
     </span>
   );
 }

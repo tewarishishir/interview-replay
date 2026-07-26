@@ -113,19 +113,6 @@ export async function postCritique(
   rebuild: RebuildDto;
   passedGuardrails: boolean;
   guardrailTripCount: number;
-  /**
-   * Whole credits actually deducted on this call. 0 when the
-   * accumulator just incremented (no rollover) OR when the critique
-   * fell back to a guardrail-stripped basic response (we don't
-   * charge for fallbacks). 1 when a rollover charged a credit.
-   */
-  creditsCharged: 0 | 1;
-  /**
-   * `credit_balance` after the call, when a charge was attempted.
-   * Null when no charge was attempted (guardrail trip / unknown
-   * route error short-circuit).
-   */
-  balanceAfter: number | null;
 }> {
   return jsonRequest(`/api/rebuilds/${id}/critique`, { method: "POST" });
 }
@@ -134,16 +121,6 @@ export async function postEnhance(
   id: string,
 ): Promise<{
   rebuild: RebuildDto;
-  /**
-   * Whole credits actually deducted. 0 on a non-rollover call; 1
-   * when the Nth enhance rolls over the accumulator.
-   */
-  creditsCharged: 0 | 1;
-  /**
-   * `credit_balance` after the call. Null when no charge was
-   * attempted.
-   */
-  balanceAfter: number | null;
 }> {
   return jsonRequest(`/api/rebuilds/${id}/enhance`, { method: "POST" });
 }
@@ -173,24 +150,19 @@ export async function postSaveToBank(
  *   - `passedGuardrails: true` — the model returned a grounded
  *     draft. `rebuild.aiSuggestedResponse` carries the new
  *     persisted suggestion. `syntheticSuggestion` is `null`.
- *     `creditsCharged` is 0 or 1 depending on accumulator
- *     rollover.
  *
  *   - `passedGuardrails: false` — the model's response failed
  *     the schema parser or the verbatim-citation guardrail.
  *     The server did NOT touch the row (so a previously-good
  *     cached `aiSuggestedResponse` is preserved), did NOT bump
- *     the 10/24h gate, and did NOT charge. The `rebuild` echoed
- *     back is unchanged. `syntheticSuggestion` carries a
- *     placeholder STAR shell the UI can show alongside a
- *     "try again" caveat.
+ *     the 10/24h gate. The `rebuild` echoed back is unchanged.
+ *     `syntheticSuggestion` carries a placeholder STAR shell
+ *     the UI can show alongside a "try again" caveat.
  */
 export async function postSuggestResponse(id: string): Promise<{
   rebuild: RebuildDto;
   syntheticSuggestion: SuggestedResponse | null;
   passedGuardrails: boolean;
-  creditsCharged: 0 | 1;
-  balanceAfter: number | null;
 }> {
   return jsonRequest(`/api/rebuilds/${id}/suggest-response`, {
     method: "POST",

@@ -1,22 +1,14 @@
 import "server-only";
 
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { db, schema } from "@/lib/db";
 import type { User } from "@/lib/db/schema";
-import {
-  resolveReferrerByCode,
-  setReferralCodeOnTx,
-  setReferredByOnTx,
-} from "@/lib/referrals";
 
-import { SIGNUP_BONUS_CREDITS } from "./constants";
 import { sendVerificationEmail } from "./email";
 import { hashPassword, verifyPassword } from "./password";
 import { sendWelcomeEmail } from "@/lib/email/templates";
 import { geoFromHeaders, geoForIp } from "@/lib/geoip";
-import { trackServerEvent } from "@/lib/analytics/server";
-import { ANALYTICS_EVENTS } from "@/lib/analytics/events";
 
 /**
  * Pure (request-context-free) user-management helpers. The server
@@ -49,7 +41,7 @@ function isUniqueViolation(err: unknown): boolean {
 
 export interface CreateUserOk {
   ok: true;
-  user: Pick<User, "id" | "email" | "name" | "creditBalance">;
+  user: Pick<User, "id" | "email" | "name">;
   /** Verify URL surfaced for tests / dev console. */
   verifyUrl: string;
 }
@@ -67,10 +59,7 @@ export type CreateUserResult = CreateUserOk | CreateUserErr;
  *   1. Verify no existing row with this email (friendly error vs. raw
  *      Postgres unique violation).
  *   2. Hash the password (argon2id, ~150–250 ms).
- *   3. INSERT the user with `credit_balance = 1` AND the matching
- *      `credit_transactions` ledger row, in a single transaction. If
- *      either fails, both roll back — the running balance must always
- *      equal `sum(credit_transactions.delta)` for the user.
+ *   3. INSERT the user row in a transaction.
  *   4. Issue a verification token (placeholder Resend dispatch). This
  *      is intentionally outside the transaction so a flaky email
  *      provider doesn't undo a successful signup.
@@ -79,13 +68,6 @@ export async function createCredentialsUser(input: {
   email: string;
   password: string;
   name?: string | null;
-  /**
-   * Optional referral code captured from `?ref=CODE` on the signup
-   * page. Junk / unknown / self-referral codes are silently
-   * ignored (no error to the user) so a brand-new signup is never
-   * blocked by a stale or mistyped link.
-   */
-  referralCode?: string | null;
   /**
    * Raw request headers from the signup action. When present, geo is
    * resolved via `geoFromHeaders` which checks common proxy geo
@@ -107,7 +89,7 @@ export async function createCredentialsUser(input: {
   // rows too), so a duplicate email here means we'd hit a Postgres
   // unique violation regardless of `deleted_at`. We can't safely
   // re-use a soft-deleted user's email — that would resurrect their
-  // sessions and credit ledger. Surface as duplicate either way.
+  // sessions. Surface as duplicate either way.
   const existing = await db
     .select({ id: schema.users.id })
     .from(schema.users)
@@ -141,22 +123,6 @@ export async function createCredentialsUser(input: {
           }))
         : { countryCode: null, subdivisionCode: null };
 
-  // Resolve referral attribution BEFORE opening the user-create
-  // transaction. The lookup is a single indexed read and doesn't
-  // need to share locks with the insert; doing it inside the tx
-  // would only make the transaction longer for no benefit. Self-
-  // referral by email is the only check we can do before the user
-  // row exists (the `excludeUserId` check is a no-op here).
-  const referrer = input.referralCode
-    ? await resolveReferrerByCode({
-        code: input.referralCode,
-        excludeEmail: email,
-      })
-    : null;
-
-  // Both writes in one transaction so the credit ledger never gets
-  // out of sync with the user's `creditBalance` column.
-  //
   // Race-window note: the `existing` check above and this insert are
   // not atomic. Two concurrent signups with the same email both pass
   // the precheck, then one trips the `users_email_key` unique index.
@@ -172,7 +138,6 @@ export async function createCredentialsUser(input: {
           email,
           name: input.name && input.name.trim().length > 0 ? input.name : null,
           passwordHash,
-          creditBalance: SIGNUP_BONUS_CREDITS,
           signupCountryCode,
           signupSubdivisionCode,
         })
@@ -180,93 +145,20 @@ export async function createCredentialsUser(input: {
           id: schema.users.id,
           email: schema.users.email,
           name: schema.users.name,
-          creditBalance: schema.users.creditBalance,
         });
 
       if (!created) {
-        // Returning nothing from an INSERT is unexpected; throw so the
-        // transaction rolls back and the caller sees `insert_failed`.
         throw new Error("createCredentialsUser: INSERT returned no row");
       }
 
-      // Email-reuse abuse check: query the audit log for prior
-      // signups with this email. If found, this is a re-signup with
-      // a previously-deleted account — grant 0 credits to prevent
-      // the trial-farm abuse path. Otherwise grant the standard 2.
-      const priorSignups = await tx.execute<{ id: string }>(sql`
-        SELECT id::text AS id
-        FROM ${schema.auditLog}
-        WHERE event_type IN ('auth.signup', 'auth.signup_resignup')
-          AND event_data->>'email' = ${email}
-        LIMIT 1
-      `);
-
-      const isReSignup = priorSignups.rows.length > 0;
-      const grantedCredits = isReSignup ? 0 : SIGNUP_BONUS_CREDITS;
-
-      // Persist the actual balance (0 for re-signups) — overrides the
-      // schema default we wrote on insert.
-      if (grantedCredits !== created.creditBalance) {
-        await tx
-          .update(schema.users)
-          .set({
-            creditBalance: grantedCredits,
-            freeCreditUsed: isReSignup,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.users.id, created.id));
-        // Reflect the change in the returned record so callers see
-        // the right balance.
-        (created as { creditBalance: number }).creditBalance = grantedCredits;
-      }
-
-      // Ledger row only when credits actually moved.
-      if (grantedCredits > 0) {
-        await tx.insert(schema.creditTransactions).values({
-          userId: created.id,
-          delta: grantedCredits,
-          balanceAfter: grantedCredits,
-          reason: "signup_bonus",
-        });
-      }
-
-      // Audit log: stamp the signup with the email so the next
-      // re-signup with the same email can detect it (the column the
-      // check above queries).
-      //
-      // userId is intentionally left NULL — `auth.signup` is the
-      // pre-auth audit pattern documented on the schema (user_id
-      // nullable + ON DELETE SET NULL specifically for pre-auth /
-      // signup events). The email-reuse query keys on event_data
-      // -> 'email', so attribution stays intact while keeping the
-      // user-scoped views (tests, the compliance export) free of
-      // a per-user signup row they don't care about.
       await tx.insert(schema.auditLog).values({
-        eventType: isReSignup ? "auth.signup_resignup" : "auth.signup",
+        eventType: "auth.signup",
         eventData: {
           email,
           user_id: created.id,
-          credits_granted: grantedCredits,
           signup_country_code: signupCountryCode,
         },
       });
-
-      // Mint the user's own referral code so they can share
-      // immediately from the Account page / Dashboard nudge.
-      // Inside the same tx so the user row + signup ledger + code
-      // all commit together.
-      await setReferralCodeOnTx(tx, created.id);
-
-      // Record the inbound attribution if `?ref=` resolved to a
-      // valid referrer. The +1 payout to the referrer happens
-      // later, when the referee makes their FIRST succeeded
-      // credit-pack purchase (see `awardReferrerOnFirstPurchase`,
-      // called from the Stripe webhook handler). Free-credit-only
-      // signups never pay out. At signup time we only record WHO
-      // referred WHOM.
-      if (referrer) {
-        await setReferredByOnTx(tx, created.id, referrer.id);
-      }
 
       return created;
     })
@@ -286,17 +178,6 @@ export async function createCredentialsUser(input: {
     return { ok: false, error: "insert_failed" };
   }
 
-  // Best-effort analytics event.
-  try {
-    trackServerEvent({
-      distinctId: row.id,
-      event: ANALYTICS_EVENTS.freeCreditsGranted,
-      properties: { credits: row.creditBalance },
-    });
-  } catch (err) {
-    console.warn("[createCredentialsUser] analytics dispatch failed:", err);
-  }
-
   // Best-effort verification email — failures don't block signup.
   let verifyUrl = "";
   try {
@@ -307,7 +188,7 @@ export async function createCredentialsUser(input: {
   }
 
   // Best-effort welcome email — sent after verification email so the
-  // inbox ordering is: (1) verify your email, (2) welcome + credits.
+  // inbox ordering is: (1) verify your email, (2) welcome.
   try {
     await sendWelcomeEmail({ to: email, name: row.name });
   } catch (err) {

@@ -5,12 +5,6 @@ import { z } from "zod";
 import { ANALYTICS_EVENTS } from "@/lib/analytics/events";
 import { trackServerEvent } from "@/lib/analytics/server";
 import { getActiveUserId } from "@/lib/auth/session";
-import {
-  chargeRebuildCritique,
-  InsufficientCreditsError,
-  previewRebuildCritiqueCost,
-  REBUILD_CRITIQUE_CREDIT_COST,
-} from "@/lib/credits";
 import { LlmNotConfiguredError } from "@/lib/llm";
 import { rebuildCritiqueLimiter } from "@/lib/rate-limit";
 import { isSameOrigin } from "@/lib/same-origin";
@@ -58,8 +52,7 @@ import {
  *
  * ## Response shape
  *
- * `{ critique, passedGuardrails, guardrailTripCount, creditsCharged,
- *    balanceAfter }`
+ * `{ critique, passedGuardrails, guardrailTripCount }`
  *
  * `critique` is the same `CritiqueResponse` shape as the rebuild
  * critique route — the existing `CritiqueView` component works
@@ -169,39 +162,6 @@ export async function POST(request: Request): Promise<Response> {
     throw err;
   }
 
-  // Credit preflight — same accumulator as all other Haiku surfaces.
-  let costPreview: Awaited<
-    ReturnType<typeof previewRebuildCritiqueCost>
-  >;
-  try {
-    costPreview = await previewRebuildCritiqueCost({ userId });
-  } catch (err) {
-    console.error("[story_critique_preflight]", err);
-    return NextResponse.json(
-      {
-        error: "service_unavailable",
-        message:
-          "We couldn't check your credit balance right now. Try again in a moment.",
-      },
-      { status: 503 },
-    );
-  }
-  if (!costPreview) return UNAUTHORIZED();
-  if (!costPreview.canAffordNext) {
-    return NextResponse.json(
-      {
-        error: "insufficient_credits",
-        message:
-          `You're out of credits. Each critique costs ${REBUILD_CRITIQUE_CREDIT_COST.toFixed(2)} credits ` +
-          `— top up to keep practicing.`,
-        required: costPreview.wouldChargeCredits,
-        available: costPreview.currentBalance,
-        perCritiqueCost: REBUILD_CRITIQUE_CREDIT_COST,
-      },
-      { status: 402 },
-    );
-  }
-
   // Run the critique.
   let result;
   try {
@@ -242,29 +202,6 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
-  // Charge after the LLM call succeeds (or falls back). Mirrors the
-  // rebuild critique charge semantics: fallback critiques still bill
-  // because the user sees actionable output and we paid for the LLM call.
-  let creditsCharged: 0 | 1 = 0;
-  let balanceAfter: number | null = null;
-  try {
-    const charge = await chargeRebuildCritique({
-      userId,
-      surface: { kind: "story_critique" },
-    });
-    creditsCharged = charge.creditsCharged;
-    balanceAfter = charge.balanceAfter;
-  } catch (err) {
-    if (err instanceof InsufficientCreditsError) {
-      console.warn("[story_critique] charge race skipped", {
-        required: err.required,
-        available: err.available,
-      });
-    } else {
-      console.error("[story_critique_charge]", err);
-    }
-  }
-
   trackServerEvent({
     distinctId: userId,
     event: ANALYTICS_EVENTS.storyCritiqueRequested,
@@ -273,7 +210,6 @@ export async function POST(request: Request): Promise<Response> {
       guardrail_trip_count: result.guardrailFailures.length,
       model_version: result.modelVersion,
       prompt_version: result.promptVersion,
-      credits_charged: creditsCharged,
     },
   });
 
@@ -282,8 +218,6 @@ export async function POST(request: Request): Promise<Response> {
       critique: result.critique,
       passedGuardrails: result.passedGuardrails,
       guardrailTripCount: result.guardrailFailures.length,
-      creditsCharged,
-      balanceAfter,
     },
     { status: 200, headers: { "Cache-Control": "no-store, must-revalidate" } },
   );

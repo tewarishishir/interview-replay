@@ -1,16 +1,3 @@
-/**
- * Integration tests for `src/lib/admin/users-queries.ts` (Phase 2).
- *
- * Covers:
- *   - `listUsers` filter behavior (status, country, date range, sort,
- *     search), pagination, and the lifetime/last-activity joins.
- *   - `getUserDetail` shape, lifetime stats, and the note-with-author
- *     join.
- *
- * Schema reset between tests is the canonical pattern from
- * `tests/db/helpers.ts` so the lateral aggregates always run against
- * a known cohort.
- */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 
@@ -37,19 +24,12 @@ afterAll(async () => {
   await g.__irPgPool?.end();
 });
 
-// Pinned "now" inside the 30-day default filter window so seeded
-// rows always fall within the date-range filter unless the test
-// pushes them outside intentionally.
 const NOW = new Date("2026-05-17T12:00:00.000Z");
 const DAY = 24 * 60 * 60 * 1000;
 
 const withDefaults = (overrides: Partial<ListUsersFilters>): ListUsersFilters => ({
   ...DEFAULT_FILTERS,
-  // Phase-2 default is "30d"; widen to "all" for tests that span
-  // older rows so we don't have to keep stuffing recent timestamps.
   dateRange: "all",
-  // Pin "now" so date-range filters are evaluated relative to our
-  // fixed NOW constant, not real wall-clock time.
   now: NOW,
   ...overrides,
 });
@@ -75,32 +55,6 @@ async function seedUser(args: {
       isAdmin: args.isAdmin ?? false,
     })
     .returning({ id: schema.users.id });
-  return row!.id;
-}
-
-async function seedPurchase(args: {
-  userId: string;
-  status: "pending" | "succeeded" | "failed";
-  amountPaise: number;
-  packType?: "starter" | "standard" | "heavy";
-  createdAt?: Date;
-  paymentId?: string;
-}): Promise<string> {
-  const created = args.createdAt ?? NOW;
-  const [row] = await db
-    .insert(schema.creditPurchases)
-    .values({
-      userId: args.userId,
-      packType: args.packType ?? "starter",
-      creditsPurchased: 5,
-      amountPaidPaise: args.amountPaise,
-      gstAmountPaise: Math.floor((args.amountPaise * 18) / 118),
-      txnId: `txn_${args.userId}_${created.getTime()}_${Math.random()}`,
-      txnRef: args.paymentId ?? null,
-      status: args.status,
-      createdAt: created,
-    })
-    .returning({ id: schema.creditPurchases.id });
   return row!.id;
 }
 
@@ -137,17 +91,13 @@ async function seedAudit(userId: string, eventType: string, createdAt: Date) {
 }
 
 describe("listUsers", () => {
-  it("returns lifetime spend, sessions count, and geo fields", async () => {
+  it("returns sessions count and geo fields", async () => {
     const u = await seedUser({
       email: "amit@example.com",
       displayName: "Amit",
       signupCountryCode: "IN",
       signupSubdivisionCode: "MH",
     });
-    await seedPurchase({ userId: u, status: "succeeded", amountPaise: 50_000 });
-    await seedPurchase({ userId: u, status: "succeeded", amountPaise: 100_000, packType: "heavy" });
-    // A failed purchase MUST NOT count toward lifetime spend.
-    await seedPurchase({ userId: u, status: "failed", amountPaise: 999_999 });
     await seedSession({ userId: u });
     await seedSession({ userId: u });
 
@@ -159,31 +109,7 @@ describe("listUsers", () => {
     expect(row.displayName).toBe("Amit");
     expect(row.signupCountryCode).toBe("IN");
     expect(row.signupSubdivisionCode).toBe("MH");
-    expect(row.totalSpentInr).toBe(1500);
     expect(row.sessionsCount).toBe(2);
-    // Heavy outranks starter, so "highest pack" should resolve to heavy.
-    expect(row.highestPack).toBe("heavy");
-  });
-
-  it("filters status=paying to users with at least one succeeded purchase", async () => {
-    const paying = await seedUser({ email: "p@example.com" });
-    await seedPurchase({ userId: paying, status: "succeeded", amountPaise: 50_000 });
-
-    const freeUser = await seedUser({ email: "f@example.com" });
-    void freeUser;
-
-    const result = await listUsers(withDefaults({ status: "paying" }));
-    expect(result.rows.map((r) => r.email)).toEqual(["p@example.com"]);
-  });
-
-  it("filters status=free to users with no succeeded purchases", async () => {
-    const paying = await seedUser({ email: "p@example.com" });
-    await seedPurchase({ userId: paying, status: "succeeded", amountPaise: 50_000 });
-
-    await seedUser({ email: "f@example.com" });
-
-    const result = await listUsers(withDefaults({ status: "free" }));
-    expect(result.rows.map((r) => r.email)).toEqual(["f@example.com"]);
   });
 
   it("filters country=non_india to users with non-India country codes only", async () => {
@@ -210,9 +136,6 @@ describe("listUsers", () => {
     });
 
     const result = await listUsers(withDefaults({ dateRange: "7d" }));
-    // Date-range filter uses real wall time; the 30-day-old row is
-    // definitely outside the 7-day window, the 3-day-old one is
-    // inside.
     expect(result.rows.map((r) => r.email)).toContain("new@example.com");
     expect(result.rows.map((r) => r.email)).not.toContain("old@example.com");
   });
@@ -234,33 +157,13 @@ describe("listUsers", () => {
     await seedUser({ email: "literal_underscore@example.com" });
     await seedUser({ email: "literalXunderscore@example.com" });
 
-    // Without escaping, `_` would match any single character and
-    // both rows would come back. With escaping, only the first
-    // matches.
     const result = await listUsers(withDefaults({ search: "literal_underscore" }));
     expect(result.rows.map((r) => r.email)).toEqual([
       "literal_underscore@example.com",
     ]);
   });
 
-  it("sorts by highest_spend with descending lifetime totals", async () => {
-    const big = await seedUser({ email: "big@example.com" });
-    const med = await seedUser({ email: "med@example.com" });
-    const none = await seedUser({ email: "none@example.com" });
-    void none;
-    await seedPurchase({ userId: big, status: "succeeded", amountPaise: 500_000 });
-    await seedPurchase({ userId: med, status: "succeeded", amountPaise: 100_000 });
-
-    const result = await listUsers(withDefaults({ sort: "highest_spend" }));
-    expect(result.rows.map((r) => r.email)).toEqual([
-      "big@example.com",
-      "med@example.com",
-      "none@example.com",
-    ]);
-  });
-
   it("paginates: page=1 + page=2 return disjoint sets that cover the whole cohort", async () => {
-    // Seed PAGE_SIZE + 1 users so the second page has exactly one row.
     for (let i = 0; i < 51; i += 1) {
       await seedUser({
         email: `u${String(i).padStart(2, "0")}@example.com`,
@@ -313,44 +216,21 @@ describe("getUserDetail", () => {
     expect(detail).toBeNull();
   });
 
-  it("aggregates lifetime stats: sessions, credits purchased, credits used, total spent", async () => {
+  it("aggregates lifetime stats: sessions count", async () => {
     const id = await seedUser({
       email: "u@example.com",
       signupCountryCode: "IN",
       signupSubdivisionCode: "KA",
     });
 
-    await seedPurchase({
-      userId: id,
-      status: "succeeded",
-      amountPaise: 50_000,
-    });
-    await seedPurchase({
-      userId: id,
-      status: "failed",
-      amountPaise: 999_999,
-    });
     await seedSession({ userId: id });
     await seedSession({ userId: id, state: "failed" });
-
-    // Manual ledger inserts: simulate credit consumption.
-    await db.insert(schema.creditTransactions).values({
-      userId: id,
-      delta: -3,
-      balanceAfter: 7,
-      reason: "interview_charge",
-    });
 
     const detail = await getUserDetail(id);
     expect(detail).not.toBeNull();
     expect(detail!.signupCountryCode).toBe("IN");
     expect(detail!.signupSubdivisionCode).toBe("KA");
     expect(detail!.lifetime.sessionsCount).toBe(2);
-    // Two sessions seeded but only the succeeded purchase counts toward credits.
-    expect(detail!.lifetime.creditsPurchased).toBe(5);
-    expect(detail!.lifetime.creditsUsed).toBe(3);
-    expect(detail!.lifetime.totalSpentInr).toBe(500);
-    expect(detail!.payments).toHaveLength(2);
     expect(detail!.sessions).toHaveLength(2);
   });
 
@@ -403,4 +283,3 @@ describe("getUserDetail", () => {
     expect(fresh!.lastActivityAt.getTime()).toBe(fresh!.signedUpAt.getTime());
   });
 });
-

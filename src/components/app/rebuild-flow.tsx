@@ -390,7 +390,6 @@ export function RebuildFlow(props: RebuildFlowProps) {
       const {
         rebuild: next,
         passedGuardrails,
-        creditsCharged,
       } = await postCritique(rebuild.id);
       setRebuild(next);
       setStep(5);
@@ -398,7 +397,6 @@ export function RebuildFlow(props: RebuildFlowProps) {
       fireAnalytics("rebuild_critique_requested", {
         critique_count: next.critiqueRunCount,
         passed_guardrails: passedGuardrails,
-        credits_charged: creditsCharged,
       });
     } catch (err) {
       if (err instanceof RebuildApiError) {
@@ -458,9 +456,7 @@ export function RebuildFlow(props: RebuildFlowProps) {
 
       router.refresh();
 
-      fireAnalytics("rebuild_enhance_applied", {
-        credits_charged: response.creditsCharged,
-      });
+      fireAnalytics("rebuild_enhance_applied", {});
 
       // Start the 30-second undo window.
       if (undoTimerRef.current) clearTimeout(undoTimerRef.current);

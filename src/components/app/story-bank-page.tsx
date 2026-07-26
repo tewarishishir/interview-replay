@@ -929,7 +929,6 @@ function StoryForm(props: {
       router.refresh();
       fireAnalytics("story_critique_requested", {
         passed_guardrails: response.passedGuardrails,
-        credits_charged: response.creditsCharged,
       });
     } catch (err) {
       if (err instanceof ApiError) {
@@ -975,9 +974,7 @@ function StoryForm(props: {
         setPreEnhanceDraft(null);
       }, 30_000);
       router.refresh();
-      fireAnalytics("story_enhance_applied", {
-        credits_charged: response.creditsCharged,
-      });
+      fireAnalytics("story_enhance_applied", {});
     } catch (err) {
       // Clear snapshot — enhancement didn't apply.
       setPreEnhanceDraft(null);

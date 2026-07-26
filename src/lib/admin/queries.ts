@@ -12,7 +12,6 @@ import { db, schema } from "@/lib/db";
  * and uses the indexes added in migration 0026:
  *
  *   - `users_created_at_idx` (partial on `deleted_at IS NULL`)
- *   - `credit_purchases_status_created_idx`
  *   - `interview_sessions_state_created_idx` (partial on `deleted_at IS NULL`)
  *   - `audit_log_event_type_created_idx`
  *
@@ -22,24 +21,7 @@ import { db, schema } from "@/lib/db";
  * `dayBounds` and pin it to "Asia/Kolkata" — none of the calling sites
  * pass anything cross-tenant so the change is local.
  *
- * "Variable cost per session" lives as a named constant rather than
- * a query parameter — the founder's runbook number is ₹50/session,
- * and changing it has business implications (re-papers gross margin
- * across every historical row in the dashboard) that should be a
- * code review, not a function arg.
  */
-
-/**
- * Estimated variable cost per completed session (₹). Sourced from
- * the founder's cost analysis — transcription + LLM + a haircut for
- * the per-session infrastructure fraction. Tracked here as the single
- * source of truth so the Ops dashboard and the gross-margin
- * supporting line never drift.
- *
- * If this number moves more than ±20% the dashboards should call it
- * out — but for v1 we just hardcode and re-read every render.
- */
-export const VARIABLE_COST_PER_SESSION_INR = 50;
 
 /** [startMs, endMs) UTC bounds for the day containing `date`. */
 function dayBounds(date: Date): { start: Date; end: Date } {
@@ -60,20 +42,6 @@ function utcDateLabel(date: Date): string {
 export interface DailyMetrics {
   /** New `users` rows in the day. Soft-deleted excluded. */
   new_signups: number;
-  /**
-   * Users whose FIRST `credit_purchases` row with status='succeeded'
-   * landed in the day. NOT "succeeded purchases today by users who
-   * later turned out to be paying" — strictly first-purchase
-   * conversions per day.
-   */
-  new_paying_users: number;
-  /**
-   * Sum of `credit_purchases.amount_paid_paise` / 100 for succeeded
-   * rows in the day. Returned as INR (integer rupees rounded down;
-   * the spec asks for `₹X,XXX` formatting). Includes the embedded
-   * GST portion — the dashboard line is gross revenue, not net.
-   */
-  revenue_inr: number;
   /**
    * Distinct user count from `audit_log.user_id` in the day. We use
    * the audit log (not interview_sessions) because the spec asks for
@@ -102,12 +70,8 @@ export interface DailyMetrics {
 export async function getDailyMetrics(date: Date): Promise<DailyMetrics> {
   const { start, end } = dayBounds(date);
 
-  // Five reads in parallel — they hit independent indexes and the
-  // dashboard renders the cards independently anyway.
   const [
     newSignupsRow,
-    newPayingUsersRow,
-    revenueRow,
     activeUsersRow,
     sessionsCompletedRow,
   ] = await Promise.all([
@@ -119,39 +83,6 @@ export async function getDailyMetrics(date: Date): Promise<DailyMetrics> {
           gte(schema.users.createdAt, start),
           lt(schema.users.createdAt, end),
           isNull(schema.users.deletedAt),
-        ),
-      ),
-
-    // First-paying-user count: window over succeeded purchases per
-    // user, pick the earliest, then count users whose earliest falls
-    // in the day. Done as one query so we don't iterate N users in
-    // app code.
-    db.execute(sql<{ n: number }>`
-      SELECT count(*)::int AS n
-      FROM (
-        SELECT user_id,
-               min(created_at) AS first_succeeded
-        FROM credit_purchases
-        WHERE status = 'succeeded'
-          AND user_id IS NOT NULL
-        GROUP BY user_id
-      ) AS firsts
-      WHERE firsts.first_succeeded >= ${start.toISOString()}
-        AND firsts.first_succeeded <  ${end.toISOString()}
-    `),
-
-    db
-      .select({
-        // coalesce so a day with zero succeeded purchases returns 0,
-        // not NULL.
-        paise: sql<number>`coalesce(sum(${schema.creditPurchases.amountPaidPaise}), 0)::bigint`,
-      })
-      .from(schema.creditPurchases)
-      .where(
-        and(
-          eq(schema.creditPurchases.status, "succeeded"),
-          gte(schema.creditPurchases.createdAt, start),
-          lt(schema.creditPurchases.createdAt, end),
         ),
       ),
 
@@ -181,22 +112,8 @@ export async function getDailyMetrics(date: Date): Promise<DailyMetrics> {
       ),
   ]);
 
-  // `db.execute` returns the raw pg driver result; the typed wrapper
-  // queries hand back the row objects directly.
-  // pg's `node-postgres` returns numeric `count` columns as strings;
-  // the `::int` cast above + Number() here makes both shapes safe.
-  type CountRow = { n?: number | string | null };
-  const firstPayingRow = (newPayingUsersRow as unknown as { rows: CountRow[] })
-    .rows?.[0];
-
-  const paiseTotal = revenueRow[0]?.paise ?? 0;
-  // `bigint` columns come back as strings from node-pg; normalize.
-  const paiseNum = typeof paiseTotal === "string" ? Number(paiseTotal) : Number(paiseTotal);
-
   return {
     new_signups: Number(newSignupsRow[0]?.n ?? 0),
-    new_paying_users: Number(firstPayingRow?.n ?? 0),
-    revenue_inr: Math.floor(paiseNum / 100),
     active_users: Number(activeUsersRow[0]?.n ?? 0),
     sessions_analyzed: Number(sessionsCompletedRow[0]?.n ?? 0),
   };
@@ -207,7 +124,6 @@ export async function getDailyMetrics(date: Date): Promise<DailyMetrics> {
 export interface WeeklyTrendEntry {
   date: string;
   signups: number;
-  paying_users: number;
   sessions: number;
 }
 
@@ -225,7 +141,7 @@ export async function getWeeklyTrend(endDate: Date): Promise<WeeklyTrendEntry[]>
   const { end } = dayBounds(endDate);
   const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  const [signupsByDay, payingByDay, sessionsByDay] = await Promise.all([
+  const [signupsByDay, sessionsByDay] = await Promise.all([
     db.execute(sql<{ day: string; n: number }>`
       SELECT to_char(date_trunc('day', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
              count(*)::int AS n
@@ -233,23 +149,6 @@ export async function getWeeklyTrend(endDate: Date): Promise<WeeklyTrendEntry[]>
       WHERE created_at >= ${start.toISOString()}
         AND created_at <  ${end.toISOString()}
         AND deleted_at IS NULL
-      GROUP BY day
-    `),
-
-    // First-succeeded purchase per user, grouped by day.
-    db.execute(sql<{ day: string; n: number }>`
-      SELECT to_char(date_trunc('day', firsts.first_succeeded AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
-             count(*)::int AS n
-      FROM (
-        SELECT user_id,
-               min(created_at) AS first_succeeded
-        FROM credit_purchases
-        WHERE status = 'succeeded'
-          AND user_id IS NOT NULL
-        GROUP BY user_id
-      ) AS firsts
-      WHERE firsts.first_succeeded >= ${start.toISOString()}
-        AND firsts.first_succeeded <  ${end.toISOString()}
       GROUP BY day
     `),
 
@@ -274,7 +173,6 @@ export async function getWeeklyTrend(endDate: Date): Promise<WeeklyTrendEntry[]>
   };
 
   const signupsMap = toMap(signupsByDay);
-  const payingMap = toMap(payingByDay);
   const sessionsMap = toMap(sessionsByDay);
 
   const out: WeeklyTrendEntry[] = [];
@@ -284,7 +182,6 @@ export async function getWeeklyTrend(endDate: Date): Promise<WeeklyTrendEntry[]>
     out.push({
       date: label,
       signups: signupsMap.get(label) ?? 0,
-      paying_users: payingMap.get(label) ?? 0,
       sessions: sessionsMap.get(label) ?? 0,
     });
   }
@@ -297,7 +194,6 @@ export interface FunnelMetrics {
   signed_up: number;
   onboarded: number;
   first_analysis: number;
-  bought_pack: number;
 }
 
 /**
@@ -310,14 +206,8 @@ export interface FunnelMetrics {
  *   - first_analysis : cohort ∩ (has at least one interview_sessions
  *                     with state='complete' AND created within 30 days
  *                     of that user's signup)
- *   - bought_pack    : cohort ∩ (has at least one credit_purchases row
- *                     status='succeeded' AND created within 30 days of
- *                     signup)
- *
  * The "30 days of signup" window matches the spec's intent — we're
- * measuring conversion velocity, not raw lifetime conversion. A user
- * who signed up six months ago and bought yesterday is NOT counted
- * in `bought_pack`; that's a "reactivation" story, not a funnel one.
+ * measuring conversion velocity, not raw lifetime conversion.
  *
  * Returned as a single round-trip via four correlated subqueries
  * against the cohort — easier to read AND faster than four separate
@@ -336,7 +226,6 @@ export async function getFunnel(
     signed_up: number;
     onboarded: number;
     first_analysis: number;
-    bought_pack: number;
   }>`
     WITH cohort AS (
       SELECT id, created_at
@@ -369,24 +258,13 @@ export async function getFunnel(
             AND s.deleted_at IS NULL
             AND s.created_at <= c.created_at + interval '30 days'
         )
-      ) AS first_analysis,
-      (
-        SELECT count(*)::int
-        FROM cohort c
-        WHERE EXISTS (
-          SELECT 1 FROM credit_purchases p
-          WHERE p.user_id = c.id
-            AND p.status = 'succeeded'
-            AND p.created_at <= c.created_at + interval '30 days'
-        )
-      ) AS bought_pack
+      ) AS first_analysis
   `);
 
   type Row = {
     signed_up?: number | string | null;
     onboarded?: number | string | null;
     first_analysis?: number | string | null;
-    bought_pack?: number | string | null;
   };
   const row = (result as unknown as { rows: Row[] }).rows?.[0] ?? {};
 
@@ -394,80 +272,6 @@ export async function getFunnel(
     signed_up: Number(row.signed_up ?? 0),
     onboarded: Number(row.onboarded ?? 0),
     first_analysis: Number(row.first_analysis ?? 0),
-    bought_pack: Number(row.bought_pack ?? 0),
-  };
-}
-
-// ─── getRevenueAndCost ────────────────────────────────────────────
-
-export interface RevenueAndCost {
-  revenue_inr: number;
-  variable_cost_inr_estimate: number;
-  gross_margin_inr: number;
-  /** Integer percentage (rounded). Defined as 0 when revenue is 0. */
-  gross_margin_pct: number;
-  packs_sold: number;
-}
-
-/**
- * Revenue + (estimated) variable cost over [startDate, endDate].
- *
- * "variable_cost" uses the runbook's flat ₹50/session figure (see
- * `VARIABLE_COST_PER_SESSION_INR`) — for v1 we don't try to
- * proportionally split transcription/LLM per-session bills, the
- * average is what the founder watches week-over-week.
- *
- * `packs_sold` counts succeeded purchases (not credits granted) so
- * the "avg ₹X per pack" supporting line on the dashboard makes
- * sense ("3 packs sold @ ₹600 avg" vs. "3 packs sold @ 23 credits avg").
- */
-export async function getRevenueAndCost(
-  startDate: Date,
-  endDate: Date,
-): Promise<RevenueAndCost> {
-  const [revenueRow, sessionsRow] = await Promise.all([
-    db
-      .select({
-        paise: sql<number>`coalesce(sum(${schema.creditPurchases.amountPaidPaise}), 0)::bigint`,
-        packs: sql<number>`count(*)::int`,
-      })
-      .from(schema.creditPurchases)
-      .where(
-        and(
-          eq(schema.creditPurchases.status, "succeeded"),
-          gte(schema.creditPurchases.createdAt, startDate),
-          lt(schema.creditPurchases.createdAt, endDate),
-        ),
-      ),
-
-    db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(schema.interviewSessions)
-      .where(
-        and(
-          eq(schema.interviewSessions.state, "complete"),
-          gte(schema.interviewSessions.updatedAt, startDate),
-          lt(schema.interviewSessions.updatedAt, endDate),
-          isNull(schema.interviewSessions.deletedAt),
-        ),
-      ),
-  ]);
-
-  const paiseTotal = revenueRow[0]?.paise ?? 0;
-  const paiseNum = typeof paiseTotal === "string" ? Number(paiseTotal) : Number(paiseTotal);
-  const revenue = Math.floor(paiseNum / 100);
-  const packs = Number(revenueRow[0]?.packs ?? 0);
-  const sessions = Number(sessionsRow[0]?.n ?? 0);
-  const cost = sessions * VARIABLE_COST_PER_SESSION_INR;
-  const margin = revenue - cost;
-  const marginPct = revenue > 0 ? Math.round((margin / revenue) * 100) : 0;
-
-  return {
-    revenue_inr: revenue,
-    variable_cost_inr_estimate: cost,
-    gross_margin_inr: margin,
-    gross_margin_pct: marginPct,
-    packs_sold: packs,
   };
 }
 
@@ -499,15 +303,11 @@ export interface HealthAlert {
 export async function getHealthAlerts(now: Date = new Date()): Promise<HealthAlert[]> {
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const today = dayBounds(now);
 
   const results = await Promise.allSettled([
     checkInferenceConfirmationRate(sevenDaysAgo),
     checkAnalysisFailureRate(oneDayAgo),
     checkNonIndianSignups(sevenDaysAgo),
-    checkPaymentFailures(oneDayAgo),
-    checkDailyRevenueDrop(today.start, sevenDaysAgo),
-    // TODO(v1.1): add guardrail trip rate check (needs log aggregation).
   ]);
 
   const alerts: HealthAlert[] = [];
@@ -622,79 +422,4 @@ async function checkNonIndianSignups(since: Date): Promise<HealthAlert | null> {
   };
 }
 
-async function checkPaymentFailures(since: Date): Promise<HealthAlert | null> {
-  const result = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(schema.creditPurchases)
-    .where(
-      and(
-        eq(schema.creditPurchases.status, "failed"),
-        gte(schema.creditPurchases.createdAt, since),
-      ),
-    );
-
-  const n = Number(result[0]?.n ?? 0);
-  if (n <= 5) return null;
-  return {
-    severity: "warning",
-    title: `${n} payment failures`,
-    description: `Above the 5/day threshold. Check payment processor for declined patterns.`,
-    scope: "last 24 hours",
-  };
-}
-
-async function checkDailyRevenueDrop(
-  todayStart: Date,
-  sevenDaysAgo: Date,
-): Promise<HealthAlert | null> {
-  const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
-
-  const [todayRow, sevenDayRow] = await Promise.all([
-    db
-      .select({
-        paise: sql<number>`coalesce(sum(${schema.creditPurchases.amountPaidPaise}), 0)::bigint`,
-      })
-      .from(schema.creditPurchases)
-      .where(
-        and(
-          eq(schema.creditPurchases.status, "succeeded"),
-          gte(schema.creditPurchases.createdAt, todayStart),
-          lt(schema.creditPurchases.createdAt, todayEnd),
-        ),
-      ),
-    db
-      .select({
-        paise: sql<number>`coalesce(sum(${schema.creditPurchases.amountPaidPaise}), 0)::bigint`,
-      })
-      .from(schema.creditPurchases)
-      .where(
-        and(
-          eq(schema.creditPurchases.status, "succeeded"),
-          gte(schema.creditPurchases.createdAt, sevenDaysAgo),
-          lt(schema.creditPurchases.createdAt, todayStart),
-        ),
-      ),
-  ]);
-
-  const toInr = (paise: number | string | null | undefined): number => {
-    const n = typeof paise === "string" ? Number(paise) : Number(paise ?? 0);
-    return Math.floor(n / 100);
-  };
-  const today = toInr(todayRow[0]?.paise);
-  const sevenTotal = toInr(sevenDayRow[0]?.paise);
-  const sevenAvg = sevenTotal / 7;
-
-  // Only meaningful when the 7-day total is non-trivial — otherwise
-  // a slow week ago would yield a "drop" the moment today logs a
-  // single succeeded purchase. Spec threshold: ₹5000 7-day total.
-  if (sevenTotal < 5000) return null;
-  if (today >= sevenAvg * 0.3) return null;
-
-  return {
-    severity: "warning",
-    title: `Today's revenue is ₹${today.toLocaleString("en-IN")} vs ₹${Math.round(sevenAvg).toLocaleString("en-IN")} 7-day avg`,
-    description: `Below 30% of the 7-day average. Check for outage/incident.`,
-    scope: "today",
-  };
-}
 

@@ -5,12 +5,6 @@ import { z } from "zod";
 import { ANALYTICS_EVENTS } from "@/lib/analytics/events";
 import { trackServerEvent } from "@/lib/analytics/server";
 import { getActiveUserId } from "@/lib/auth/session";
-import {
-  chargeRebuildCritique,
-  InsufficientCreditsError,
-  previewRebuildCritiqueCost,
-  REBUILD_CRITIQUE_CREDIT_COST,
-} from "@/lib/credits";
 import type { RebuildQuestionTheme } from "@/lib/db/schema";
 import { LlmNotConfiguredError } from "@/lib/llm";
 import { rebuildCritiqueLimiter } from "@/lib/rate-limit";
@@ -175,43 +169,6 @@ export async function POST(
     throw err;
   }
 
-  // Credit preflight. Same accumulator as critique in v1 — both
-  // are Haiku calls of comparable cost. We refuse before the LLM
-  // round-trip when the user can't afford the rollover charge.
-  let costPreview: Awaited<
-    ReturnType<typeof previewRebuildCritiqueCost>
-  >;
-  try {
-    costPreview = await previewRebuildCritiqueCost({ userId });
-  } catch (err) {
-    console.error("[rebuild_suggest_preflight]", err);
-    return NextResponse.json(
-      {
-        error: "service_unavailable",
-        message:
-          "We couldn't check your credit balance right now. Try again in a moment.",
-      },
-      { status: 503 },
-    );
-  }
-  if (!costPreview) {
-    return UNAUTHORIZED();
-  }
-  if (!costPreview.canAffordNext) {
-    return NextResponse.json(
-      {
-        error: "insufficient_credits",
-        message:
-          `You're out of credits. Each AI draft costs ${REBUILD_CRITIQUE_CREDIT_COST.toFixed(2)} credits ` +
-          `— top up to keep practicing.`,
-        required: costPreview.wouldChargeCredits,
-        available: costPreview.currentBalance,
-        perCritiqueCost: REBUILD_CRITIQUE_CREDIT_COST,
-      },
-      { status: 402 },
-    );
-  }
-
   // Run the suggestion. The runner does NOT throw on schema /
   // guardrail failure — it returns a synthetic fallback with
   // `passedGuardrails: false` so the user always gets something.
@@ -283,8 +240,6 @@ export async function POST(
         rebuild: toRebuildDto(rebuild),
         syntheticSuggestion: result.suggestion,
         passedGuardrails: false,
-        creditsCharged: 0 as const,
-        balanceAfter: null,
       },
       { status: 200, headers: { "Cache-Control": "no-store, must-revalidate" } },
     );
@@ -319,32 +274,6 @@ export async function POST(
 
   const updated = applied.row;
 
-  // Charge the user. The route's earlier preflight makes the
-  // rollover-without-balance case rare; landing in the catch
-  // here means a race where the balance dropped during the LLM
-  // call. We log + serve the suggestion anyway because the user
-  // already saw the work happen.
-  let creditsCharged: 0 | 1 = 0;
-  let balanceAfter: number | null = null;
-  try {
-    const charge = await chargeRebuildCritique({
-      userId,
-      surface: { kind: "rebuild_suggest", rebuildId: rebuild.id },
-    });
-    creditsCharged = charge.creditsCharged;
-    balanceAfter = charge.balanceAfter;
-  } catch (err) {
-    if (err instanceof InsufficientCreditsError) {
-      console.warn("[rebuild_suggest] charge race skipped", {
-        rebuildId: rebuild.id,
-        required: err.required,
-        available: err.available,
-      });
-    } else {
-      console.error("[rebuild_suggest_charge]", err);
-    }
-  }
-
   const dto = toRebuildDto(updated);
 
   trackServerEvent({
@@ -355,7 +284,6 @@ export async function POST(
       passed_guardrails: true,
       model_version: result.modelVersion,
       prompt_version: result.promptVersion,
-      credits_charged: creditsCharged,
       sources_count: result.suggestion.sources.length,
       caveats_count: result.suggestion.caveats.length,
     },
@@ -366,8 +294,6 @@ export async function POST(
       rebuild: dto,
       syntheticSuggestion: null,
       passedGuardrails: true,
-      creditsCharged,
-      balanceAfter,
     },
     { status: 200, headers: { "Cache-Control": "no-store, must-revalidate" } },
   );

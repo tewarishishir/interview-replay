@@ -6,7 +6,6 @@ import {
   type AnalyzeArgs,
   buildFallbackReport,
   buildPlaceholderReport,
-  FALLBACK_MODEL_VERSION_PREFIX,
   generateReport,
   isThinTranscript,
   LlmNotConfiguredError,
@@ -17,7 +16,6 @@ import {
   loadAnalysisInputs,
   persistReportAndComplete,
   recordAnalysisFailure,
-  recordFallbackRefund,
 } from "./analyze";
 
 /**
@@ -30,17 +28,14 @@ import {
  *
  * Error contract:
  *   - On success: returns `{ reportId, modelVersion, rubricVersion }`,
- *     session state is `complete`, credits stay debited.
+ *     session state is `complete`.
  *   - On failure: throws. Before throwing, BEST-EFFORT calls
  *     `recordAnalysisFailure(...)` which atomically (a) flips the
- *     session to `failed`, (b) refunds the charged credits if this
- *     wasn't a free re-analysis, and (c) writes the audit row.
+ *     session to `failed` and (b) writes the audit row.
  */
 export async function runAnalyzeInline(args: {
   sessionId: string;
   userId: string;
-  isFreeReanalysis: boolean;
-  creditsCharged: number;
 }): Promise<{
   reportId: string;
   modelVersion: string;
@@ -103,7 +98,7 @@ export async function runAnalyzeInline(args: {
     };
 
     // Bulletproofing layers: same short-circuit rules, same
-    // fallback semantics, same refund posture.
+    // fallback semantics.
     let generated;
     if (isThinTranscript(inputs.transcript)) {
       // Layer 1: thin transcript. Skip the LLM call entirely.
@@ -116,8 +111,7 @@ export async function runAnalyzeInline(args: {
         generated = await generateReport(analyzeArgs);
       } catch (err) {
         // Layer 3: permanent LLM-side failures fall back to a
-        // graceful report rather than throwing through to the
-        // refund-and-fail catch. Transient errors (network /
+        // graceful report rather than throwing. Transient errors (network /
         // rate-limit / 5xx) still bubble — the inline path
         // doesn't have an automatic retry budget, but the
         // caller (the analyze route's catch fallback) is itself
@@ -154,31 +148,6 @@ export async function runAnalyzeInline(args: {
     });
     phaseLog("report_persisted", `report_id=${persisted.reportId}`);
 
-    // Fallback refund: the session is already in `complete` by
-    // this point; we only touch credits + audit.
-    if (generated.modelVersion.startsWith(FALLBACK_MODEL_VERSION_PREFIX)) {
-      const refund = args.isFreeReanalysis ? 0 : args.creditsCharged;
-      try {
-        await recordFallbackRefund({
-          sessionId: inputs.session.id,
-          userId: inputs.session.userId,
-          creditsToRefund: refund,
-          fallbackReason: generated.modelVersion.slice(
-            FALLBACK_MODEL_VERSION_PREFIX.length,
-          ),
-        });
-      } catch (refundErr) {
-        // The report is already persisted and the session is in
-        // `complete`. A failed refund means an operator has to
-        // adjust the user's balance by hand — log loudly with
-        // the IDs they'll need.
-        console.error(
-          `[runAnalyzeInline] recordFallbackRefund threw for session=${args.sessionId} user=${args.userId} credits=${refund}:`,
-          refundErr,
-        );
-      }
-    }
-
     // Best-effort email. A failed Resend dispatch only logs — the
     // candidate sees the report on the dashboard regardless.
     try {
@@ -209,7 +178,6 @@ export async function runAnalyzeInline(args: {
     // instead of the failed panel. Skipped when the original
     // error is `AnalysisInputsNotFoundError` (the row is gone;
     // there's nothing to write to).
-    const refund = args.isFreeReanalysis ? 0 : args.creditsCharged;
     const message =
       err instanceof Error
         ? `${err.name}: ${err.message}`
@@ -250,19 +218,6 @@ export async function runAnalyzeInline(args: {
             modelVersion: rescue.modelVersion,
             rubricVersion: rescue.rubricVersion,
           });
-          try {
-            await recordFallbackRefund({
-              sessionId: rescueInputs.session.id,
-              userId: rescueInputs.session.userId,
-              creditsToRefund: refund,
-              fallbackReason: `inline_rescue:${message}`,
-            });
-          } catch (refundErr) {
-            console.error(
-              `[runAnalyzeInline] rescue refund threw for session=${args.sessionId}:`,
-              refundErr,
-            );
-          }
           return {
             reportId: persisted.reportId,
             modelVersion: rescue.modelVersion,
@@ -285,17 +240,10 @@ export async function runAnalyzeInline(args: {
         sessionId: args.sessionId,
         userId: args.userId,
         errorMessage: message,
-        creditsToRefund: refund,
       });
     } catch (failureErr) {
-      // Last-ditch: the failure-recording transaction itself blew
-      // up. We log loudly with all the IDs needed to repair by
-      // hand, and rethrow the original error. The caller's
-      // defense-in-depth rollback will then attempt its own
-      // refund — it's a CAS on the same state guard, so a double-
-      // refund is impossible even though we're trying twice.
       console.error(
-        `[runAnalyzeInline] recordAnalysisFailure threw for session=${args.sessionId} user=${args.userId} credits=${refund}:`,
+        `[runAnalyzeInline] recordAnalysisFailure threw for session=${args.sessionId} user=${args.userId}:`,
         failureErr,
       );
     }

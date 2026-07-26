@@ -1,10 +1,9 @@
 /**
- * Local-dev seed: one test user with `SEED_CREDITS` credits and a
- * handful of example interview sessions across the round types and
- * life-cycle states the dashboard renders. Idempotent — re-running the
- * script reuses the existing user (matched by email) and replaces the
- * example sessions, so it's safe to call repeatedly during dev without
- * piling up rows.
+ * Local-dev seed: one test user and a handful of example interview
+ * sessions across the round types and life-cycle states the dashboard
+ * renders. Idempotent — re-running the script reuses the existing user
+ * (matched by email) and replaces the example sessions, so it's safe to
+ * call repeatedly during dev without piling up rows.
  *
  * Run with:
  *   pnpm db:seed
@@ -30,7 +29,6 @@ import { hashPassword } from "@/lib/auth/password";
 import { db, schema } from "../lib/db";
 
 import {
-  SEED_CREDITS,
   SEED_EMAIL,
   SEED_NAME,
   SEED_PASSWORD,
@@ -51,17 +49,12 @@ async function main(): Promise<void> {
 
   const passwordHash = await hashPassword(SEED_PASSWORD);
 
-  // Upsert by email so the script can run repeatedly. Reset credits to
-  // a known value each time so dev-environment behavior stays
-  // predictable (e.g. tests that rely on the starting balance).
   const [user] = await db
     .insert(schema.users)
     .values({
       email: SEED_EMAIL,
       name: SEED_NAME,
       passwordHash,
-      creditBalance: SEED_CREDITS,
-      freeCreditUsed: false,
       emailVerified: new Date(),
       isAdmin: true,
       termsAcceptedAt: new Date(),
@@ -70,7 +63,6 @@ async function main(): Promise<void> {
       target: schema.users.email,
       set: {
         passwordHash,
-        creditBalance: SEED_CREDITS,
         updatedAt: new Date(),
         isAdmin: true,
         deletedAt: null,
@@ -84,17 +76,9 @@ async function main(): Promise<void> {
     throw new Error("Seed: failed to upsert user");
   }
 
-  // Wipe prior example data for this user so re-running stays
-  // idempotent. Cascades clear transcripts/artifacts/etc; the ledger
-  // entries below are wiped explicitly because credit_transactions
-  // doesn't cascade off the user (FK is RESTRICT) — we only delete
-  // signup_bonus rows here so any real purchase history would survive.
   await db
     .delete(schema.interviewSessions)
     .where(eq(schema.interviewSessions.userId, user.id));
-  await db
-    .delete(schema.creditTransactions)
-    .where(eq(schema.creditTransactions.userId, user.id));
   // Profile feature: also clear so re-running the seed (and the
   // e2e suite, which uses this seed user) starts from a clean
   // profile shell every time. The 1:1 row on user_profiles
@@ -113,15 +97,6 @@ async function main(): Promise<void> {
     .delete(schema.resumeParseJobs)
     .where(eq(schema.resumeParseJobs.userId, user.id));
 
-  // Seed credit ledger so balance == sum(transactions) for the test
-  // user. We mint the SEED_CREDITS as one signup_bonus row.
-  await db.insert(schema.creditTransactions).values({
-    userId: user.id,
-    delta: SEED_CREDITS,
-    balanceAfter: SEED_CREDITS,
-    reason: "signup_bonus",
-  });
-
   // Insert sessions back-dated by `daysAgo`. We use a raw `createdAt`
   // override so the dashboard list shows a realistic spread instead of
   // four rows all at "just now".
@@ -136,7 +111,6 @@ async function main(): Promise<void> {
       roundType: sample.roundType,
       state: sample.state,
       consentAffirmedAt: createdAt,
-      creditsCharged: sample.creditsCharged,
       createdAt,
       updatedAt: createdAt,
     });
@@ -148,7 +122,6 @@ async function main(): Promise<void> {
   console.log("  user.id            =", user.id);
   console.log("  user.email         =", user.email);
   console.log("  user.password      =", SEED_PASSWORD, "(plaintext, dev only)");
-  console.log("  user.creditBalance =", user.creditBalance);
   console.log("  sessions.count     =", sampleSessions.length);
   /* eslint-enable no-console */
 }

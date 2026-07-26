@@ -10,14 +10,12 @@
  *   password is NOT reset. The generated password is only printed when
  *   the account is freshly created.
  * - The user is marked email-verified so they can log in immediately.
- * - No signup credits are granted (admin accounts aren't end-users).
  */
 
 import { eq, sql } from "drizzle-orm";
 
 import { db, schema } from "../lib/db";
 import { hashPassword } from "../lib/auth/password";
-import { setReferralCodeOnTx } from "../lib/referrals";
 
 const PASSWORD_ALPHABET =
   "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
@@ -86,7 +84,6 @@ async function main(): Promise<void> {
         passwordHash,
         emailVerified: new Date(),
         isAdmin: true,
-        creditBalance: 0,
       })
       .returning({ id: schema.users.id });
 
@@ -97,12 +94,9 @@ async function main(): Promise<void> {
       eventData: {
         email,
         user_id: created.id,
-        credits_granted: 0,
         source: "create_admin_user_script",
       },
     });
-
-    await setReferralCodeOnTx(tx, created.id);
 
     console.warn(`created admin user: ${email} (id=${created.id})`);
     console.warn(`password: ${password}`);

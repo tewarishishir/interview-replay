@@ -5,12 +5,6 @@ import { z } from "zod";
 import { ANALYTICS_EVENTS } from "@/lib/analytics/events";
 import { trackServerEvent } from "@/lib/analytics/server";
 import { getActiveUserId } from "@/lib/auth/session";
-import {
-  chargeRebuildCritique,
-  InsufficientCreditsError,
-  previewRebuildCritiqueCost,
-  REBUILD_CRITIQUE_CREDIT_COST,
-} from "@/lib/credits";
 import { rebuildQuestionThemeSchema } from "@/lib/db/schema";
 import { LlmNotConfiguredError } from "@/lib/llm";
 import { rebuildCritiqueLimiter } from "@/lib/rate-limit";
@@ -136,40 +130,6 @@ export async function POST(request: Request): Promise<Response> {
   }
   const { title, theme } = parsedBody.data;
 
-  // Credit preflight. Same accumulator as the rebuild + saved-
-  // story surfaces.
-  let costPreview: Awaited<
-    ReturnType<typeof previewRebuildCritiqueCost>
-  >;
-  try {
-    costPreview = await previewRebuildCritiqueCost({ userId });
-  } catch (err) {
-    console.error("[story_draft_preflight]", err);
-    return NextResponse.json(
-      {
-        error: "service_unavailable",
-        message:
-          "We couldn't check your credit balance right now. Try again in a moment.",
-      },
-      { status: 503 },
-    );
-  }
-  if (!costPreview) return UNAUTHORIZED();
-  if (!costPreview.canAffordNext) {
-    return NextResponse.json(
-      {
-        error: "insufficient_credits",
-        message:
-          `You're out of credits. Each AI draft costs ${REBUILD_CRITIQUE_CREDIT_COST.toFixed(2)} credits ` +
-          `— top up to keep practicing.`,
-        required: costPreview.wouldChargeCredits,
-        available: costPreview.currentBalance,
-        perCritiqueCost: REBUILD_CRITIQUE_CREDIT_COST,
-      },
-      { status: 402 },
-    );
-  }
-
   let result;
   try {
     result = await runSuggestResponse({
@@ -221,38 +181,12 @@ export async function POST(request: Request): Promise<Response> {
       {
         suggestion: result.suggestion,
         passedGuardrails: false,
-        creditsCharged: 0 as const,
-        balanceAfter: null,
       },
       {
         status: 200,
         headers: { "Cache-Control": "no-store, must-revalidate" },
       },
     );
-  }
-
-  let creditsCharged: 0 | 1 = 0;
-  let balanceAfter: number | null = null;
-  try {
-    const charge = await chargeRebuildCritique({
-      userId,
-      // Form-time surface: no entity id (the story hasn't been
-      // saved yet). The audit row's `event_type` is
-      // `story_draft.credit_charged` so dispute resolution can
-      // tell these apart from saved-story charges.
-      surface: { kind: "story_draft" },
-    });
-    creditsCharged = charge.creditsCharged;
-    balanceAfter = charge.balanceAfter;
-  } catch (err) {
-    if (err instanceof InsufficientCreditsError) {
-      console.warn("[story_draft] charge race skipped", {
-        required: err.required,
-        available: err.available,
-      });
-    } else {
-      console.error("[story_draft_charge]", err);
-    }
   }
 
   trackServerEvent({
@@ -263,7 +197,6 @@ export async function POST(request: Request): Promise<Response> {
       passed_guardrails: true,
       model_version: result.modelVersion,
       prompt_version: result.promptVersion,
-      credits_charged: creditsCharged,
       sources_count: result.suggestion.sources.length,
       caveats_count: result.suggestion.caveats.length,
     },
@@ -273,8 +206,6 @@ export async function POST(request: Request): Promise<Response> {
     {
       suggestion: result.suggestion,
       passedGuardrails: true,
-      creditsCharged,
-      balanceAfter,
     },
     { status: 200, headers: { "Cache-Control": "no-store, must-revalidate" } },
   );

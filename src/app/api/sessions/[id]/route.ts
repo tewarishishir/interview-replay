@@ -1,19 +1,13 @@
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getActiveUserId } from "@/lib/auth/session";
-import {
-  chargeTranscriptionFeeAndDelete,
-  SessionNotFoundError,
-  transcriptionFeeForDelete,
-} from "@/lib/credits";
 import { db, schema } from "@/lib/db";
 import { getSession } from "@/lib/queries/sessions";
 import { sessionDeleteLimiter, sessionPollLimiter } from "@/lib/rate-limit";
 import { isSameOrigin } from "@/lib/same-origin";
-import { StateTransitionError } from "@/lib/state-machine";
 
 /**
  * GET /api/sessions/:id
@@ -145,35 +139,6 @@ export async function GET(
   );
 }
 
-/**
- * DELETE /api/sessions/:id
- *
- * Soft-deletes a session: state transitions to `deleted` and
- * `deleted_at` is stamped. The retention sweeper later hard-purges
- * the row + audio + transcript per the privacy SLA.
- *
- * Billing:
- *   When the session was already transcribed (state = `review`) but
- *   the user bails out before paying for analysis, we still charge a
- *   small "transcription fee" — the transcription service has been called and we need
- *   to recover that cost. The fee + the soft-delete + the audit log
- *   row are all written in one transaction inside
- *   `chargeTranscriptionFeeAndDelete` so the user never sees a
- *   debited balance against a still-active session, and the API
- *   surface returns the actual amount charged so the UI can
- *   surface a "X credit charged" confirmation.
- *
- *   Sessions in earlier states (`created`, `recording`,
- *   `transcribing`) are NOT charged — no transcription value was
- *   delivered. Sessions in `analyzing` / `complete` are also NOT
- *   charged — the analyze consume already paid for the full
- *   pipeline including STT.
- *
- * Authorization mirrors GET — same-origin guard + auth gate +
- * ownership-scoped lookup. We additionally re-check the session
- * exists with a state-machine guard so a state that's somehow
- * already `deleted` returns 200 (idempotent) instead of crashing.
- */
 export async function DELETE(
   _request: Request,
   context: RouteContext,
@@ -195,10 +160,6 @@ export async function DELETE(
     );
   }
 
-  // Per-user delete throttle. Soft-delete is idempotent so a runaway
-  // loop won't double-charge the fee, but it can still hammer the
-  // audit table and the user-row FOR UPDATE inside the consume
-  // transaction. Keep abuse bounded.
   const rl = sessionDeleteLimiter();
   const limit = await rl.check(userId);
   if (!limit.success) {
@@ -227,11 +188,6 @@ export async function DELETE(
   }
   const sessionId = parsed.data.id;
 
-  // Pre-flight ownership-scoped read. We could rely entirely on the
-  // re-read inside `chargeTranscriptionFeeAndDelete`, but doing one
-  // extra cheap SELECT here lets us return the no-charge 404 path
-  // without spinning up a write transaction. Also gives us the
-  // current state for the fee calculation.
   const row = await getSession(sessionId, userId);
   if (!row) {
     return NextResponse.json(
@@ -241,81 +197,27 @@ export async function DELETE(
   }
 
   if (row.state === "deleted") {
-    // Idempotent: the user double-clicked, or two tabs raced.
-    // Mirror the legacy response shape so existing callers don't
-    // break, while including the new `creditsCharged: 0` field.
     return NextResponse.json(
-      { ok: true, alreadyDeleted: true, creditsCharged: 0 },
+      { ok: true, alreadyDeleted: true },
       { status: 200 },
     );
   }
 
-  // The fee is gated on BOTH state and recording duration — short
-  // (test / accidental) recordings are absorbed even from `review`.
-  // We only need the duration when the state could plausibly trigger
-  // a charge, so skip the extra SELECT in the common no-charge case.
-  // The fee helper re-applies its own state guard, so passing a
-  // duration unconditionally is fine; this is purely a perf shortcut.
-  let durationSeconds: number | null = null;
-  if (row.state === "review") {
-    const [t] = await db
-      .select({ durationSeconds: schema.transcripts.durationSeconds })
-      .from(schema.transcripts)
-      .where(eq(schema.transcripts.sessionId, sessionId))
-      .limit(1);
-    durationSeconds = t?.durationSeconds ?? null;
-  }
-
-  // Compute the fee from the state + duration we just read. The
-  // helper re-reads state inside the txn so this value can drift
-  // safely — it's an upper bound on what we'll attempt to charge.
-  // The actual charged amount comes back in the response.
-  const feeRequested = transcriptionFeeForDelete(row.state, durationSeconds);
-
-  let result: Awaited<ReturnType<typeof chargeTranscriptionFeeAndDelete>>;
-  try {
-    result = await chargeTranscriptionFeeAndDelete({
-      userId,
-      sessionId,
-      creditsRequired: feeRequested,
-    });
-  } catch (err) {
-    if (err instanceof StateTransitionError) {
-      return NextResponse.json(
-        { error: "state_mismatch", message: err.message },
-        { status: 409 },
-      );
-    }
-    if (err instanceof SessionNotFoundError) {
-      // The session was deleted (or its owner cleared) between the
-      // pre-flight SELECT above and the transaction. Same 404 the
-      // pre-flight returns so existence isn't disclosed.
-      return NextResponse.json(
-        { error: "not_found", message: "Session not found." },
-        { status: 404 },
-      );
-    }
-    console.error(
-      "[DELETE /api/sessions/:id] charge + delete failed:",
-      err,
-    );
-    return NextResponse.json(
-      {
-        error: "internal_error",
-        message: "Couldn't delete the session. Please try again.",
-      },
-      { status: 500 },
-    );
-  }
+  const now = new Date();
+  const [updated] = await db
+    .update(schema.interviewSessions)
+    .set({ state: "deleted", deletedAt: now, updatedAt: now })
+    .where(
+      and(
+        eq(schema.interviewSessions.id, sessionId),
+        eq(schema.interviewSessions.userId, userId),
+        ne(schema.interviewSessions.state, "deleted"),
+      ),
+    )
+    .returning({ id: schema.interviewSessions.id });
 
   return NextResponse.json(
-    {
-      ok: true,
-      alreadyDeleted: !result.applied,
-      creditsCharged: result.creditsCharged,
-      balanceAfter: result.balanceAfter,
-      previousState: result.previousState,
-    },
+    { ok: true, alreadyDeleted: !updated },
     { status: 200 },
   );
 }

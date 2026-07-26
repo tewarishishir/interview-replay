@@ -53,9 +53,6 @@ export function UsersTable({ rows }: UsersTableProps) {
             <Th>User</Th>
             <Th>Country</Th>
             <Th>Signed up</Th>
-            <Th>Free used</Th>
-            <Th>Highest pack</Th>
-            <Th align="right">Spent</Th>
             <Th>Last activity</Th>
             <Th align="right">Sessions</Th>
             <Th align="right">Actions</Th>
@@ -122,13 +119,6 @@ function UserRow({ row }: { row: UsersListRow }) {
       >
         {formatRelativeDate(row.signedUpAt)}
       </td>
-      <td className="px-3 py-2">{row.freeCreditUsed ? "Yes" : "No"}</td>
-      <td className="px-3 py-2">
-        <PackBadge pack={row.highestPack} />
-      </td>
-      <td className="px-3 py-2 text-right tabular-nums">
-        ₹{row.totalSpentInr.toLocaleString("en-IN")}
-      </td>
       <td
         className="px-3 py-2 whitespace-nowrap"
         title={row.lastActivityAt.toISOString()}
@@ -177,28 +167,6 @@ function GeoCell({
         />
       )}
       {geo}
-    </span>
-  );
-}
-
-function PackBadge({ pack }: { pack: string | null }) {
-  if (!pack)
-    return (
-      <span style={{ color: "var(--color-text-tertiary)" }}>None</span>
-    );
-  // The label is the pack name with the first letter capitalized;
-  // we keep the raw enum value so legacy `pro` / `enterprise` /
-  // `heavy_prep` rows still render cleanly.
-  const label = pack.charAt(0).toUpperCase() + pack.slice(1).replace("_", " ");
-  return (
-    <span
-      className="inline-block rounded-full px-2 py-0.5 text-xs"
-      style={{
-        background: "var(--color-bg-secondary)",
-        color: "var(--color-text-primary)",
-      }}
-    >
-      {label}
     </span>
   );
 }

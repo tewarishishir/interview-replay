@@ -152,11 +152,6 @@ describe("createFeedback", () => {
       },
     });
 
-    // Have to clear credit_transactions first — the signup-bonus
-    // ledger row has a RESTRICT FK on `users.id` (so the ledger
-    // can't be silently dropped). The feedback cascade is what
-    // we're verifying, so we sweep the blocker out of the way.
-    await db.delete(schema.creditTransactions);
     await db.delete(schema.users);
     const rows = await db.select().from(schema.feedback);
     expect(rows).toHaveLength(0);

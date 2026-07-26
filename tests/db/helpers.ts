@@ -2,20 +2,10 @@ import { sql } from "drizzle-orm";
 
 import { db, schema } from "@/lib/db";
 
-/**
- * Per-test reset: delete from every table in dependency order so each
- * test sees a clean DB without paying for `TRUNCATE ... RESTART IDENTITY`,
- * which serializes against connections and is much slower.
- *
- * Sequences are reset for the bigserial tables so `id` values stay
- * deterministic across tests.
- */
 export async function resetDatabase(): Promise<void> {
   await db.execute(sql`
     TRUNCATE TABLE
       ${schema.dataExports},
-      ${schema.creditTransactions},
-      ${schema.creditPurchases},
       ${schema.adminNotes},
       ${schema.auditLog},
       ${schema.userPatterns},
@@ -41,11 +31,6 @@ export async function resetDatabase(): Promise<void> {
 
 let migrationsApplied = false;
 
-/**
- * Best-effort sanity check that the test DB has the schema applied.
- * If the `users` table doesn't exist we throw with a helpful hint
- * rather than letting the first INSERT fail with a cryptic 42P01.
- */
 export async function ensureSchema(): Promise<void> {
   if (migrationsApplied) return;
 

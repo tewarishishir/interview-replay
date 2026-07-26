@@ -107,8 +107,6 @@ export const interviewSessions = pgTable(
     consentAffirmedAt: timestamp("consent_affirmed_at", { withTimezone: true })
       .notNull(),
 
-    creditsCharged: integer("credits_charged"),
-
     /**
      * Trigger date for the daily audio backstop cron. After this timestamp
      * the `enforce-session-retention` job will attempt to clean up any

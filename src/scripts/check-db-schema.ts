@@ -67,7 +67,7 @@ const EXPECTED: Record<string, string[]> = {
   ],
   users: [
     "id", "display_name", "email", "email_verified",
-    "credit_balance", "created_at", "updated_at", "deleted_at",
+    "created_at", "updated_at", "deleted_at",
   ],
 };
 

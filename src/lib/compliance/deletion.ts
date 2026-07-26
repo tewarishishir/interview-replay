@@ -25,9 +25,7 @@ import {
  *
  * After the cron's hard-delete pass the row simply doesn't exist.
  * Audit-log entries for the user are anonymized (FK already
- * `set null`), and credit_purchases / credit_transactions are
- * detached from the user (FK is RESTRICT, so we explicitly null
- * the `user_id` on those rows in the cron).
+ * `set null`).
  */
 
 export interface DeletionState {
@@ -320,10 +318,6 @@ export type HardDeleteAccountResult =
       s3KeysAttempted: string[];
       /** Audit-log rows whose `user_id` was set NULL (anonymized count). */
       auditLogAnonymized: number;
-      /** Credit-purchase rows whose `user_id` was set NULL. */
-      purchasesAnonymized: number;
-      /** Credit-transaction rows whose `user_id` was set NULL. */
-      transactionsAnonymized: number;
     }
   | {
       ok: false;
@@ -357,10 +351,7 @@ export type HardDeleteAccountResult =
  *   2. Re-check `deletion_requested_at < cutoff`. Abort if not.
  *   3. Anonymize audit_log first (FK is set-null; we keep the rows
  *      for compliance auditability).
- *   4. Anonymize credit_purchases + credit_transactions (FK is
- *      RESTRICT, so we MUST null the user_id before deleting the
- *      user — otherwise the cascade fails at the user row).
- *   5. Hard-delete the user (cascades wipe interview_sessions,
+ *   4. Hard-delete the user (cascades wipe interview_sessions,
  *      transcripts, artifacts, reports, audio_files,
  *      verification_tokens, accounts, auth_sessions, user_patterns,
  *      data_exports per their FK config).
@@ -457,24 +448,7 @@ export async function hardDeleteUserRecord(args: {
       .where(eq(schema.auditLog.userId, args.userId))
       .returning({ id: schema.auditLog.id });
 
-    // 5. Anonymize credit history. Both tables have FK RESTRICT,
-    //    so we MUST null user_id before the user delete or the
-    //    cascade fails. Note: ledger entries here also drop their
-    //    related_session_id link automatically when the cascade
-    //    wipes interview_sessions (FK is `set null`).
-    const anonymizedPurchases = await tx
-      .update(schema.creditPurchases)
-      .set({ userId: null })
-      .where(eq(schema.creditPurchases.userId, args.userId))
-      .returning({ id: schema.creditPurchases.id });
-
-    const anonymizedTransactions = await tx
-      .update(schema.creditTransactions)
-      .set({ userId: null })
-      .where(eq(schema.creditTransactions.userId, args.userId))
-      .returning({ id: schema.creditTransactions.id });
-
-    // 6. Hard-delete the user. Cascades take care of:
+    // 5. Hard-delete the user. Cascades take care of:
     //    interview_sessions, transcripts, artifacts, reports,
     //    audio_files, accounts, auth_sessions, user_patterns,
     //    data_exports, verification_tokens (via email match — see
@@ -486,8 +460,6 @@ export async function hardDeleteUserRecord(args: {
       userId: args.userId,
       s3KeysAttempted,
       auditLogAnonymized: anonymizedAudit.length,
-      purchasesAnonymized: anonymizedPurchases.length,
-      transactionsAnonymized: anonymizedTransactions.length,
     };
   });
 }

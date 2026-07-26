@@ -1,27 +1,3 @@
-/**
- * Integration tests for `POST /api/stories/enhance`.
- *
- * What we cover:
- *   - 401 when not authenticated.
- *   - 403 when cross-origin.
- *   - 400 on invalid body (missing critique field).
- *   - 429 from the per-user 10/24h content gate — verifying that both
- *     story_critique.unit_charged AND story_enhance.unit_charged events
- *     count toward the combined 10/24h budget.
- *   - 402 when balance=0 and units at the rollover boundary —
- *     LLM call is skipped (preflight short-circuit).
- *   - 200 + creditsCharged=0 on a non-rollover enhance that bumps the
- *     accumulator without touching the balance.
- *   - 200 + creditsCharged=1 when the Nth enhance rolls over, plus a
- *     `rebuild_critique_charge` ledger row.
- *   - Audit row: `story_enhance.unit_charged` is written on success.
- *   - Success response shape: `enhanced` contains the rewritten fields.
- *
- * The `runStoryEnhance` helper is stubbed so the tests don't need an
- * LLM provider API key. Credit/accumulator logic runs against a real
- * Postgres instance.
- */
-
 import {
   afterAll,
   beforeAll,
@@ -39,8 +15,6 @@ import type {
   CritiqueResponse,
   DimensionFeedback,
 } from "@/lib/rebuilds/schemas";
-
-/* ─── next/headers + auth mocks ────────────────────────────── */
 
 const DEFAULT_HEADERS = {
   origin: "http://localhost:3000",
@@ -60,8 +34,6 @@ vi.mock("@/lib/auth/session", () => ({
   getActiveUserId: () => mockGetActiveUserId(),
 }));
 
-/* ─── Rate-limit mock — always allow by default ─────────────── */
-
 vi.mock("@/lib/rate-limit", async () => {
   const actual = await vi.importActual<typeof RateLimitModule>(
     "@/lib/rate-limit",
@@ -80,8 +52,6 @@ vi.mock("@/lib/rate-limit", async () => {
     rebuildCritiqueLimiter: () => limiter,
   };
 });
-
-/* ─── Stub the LLM round-trip ────────────────────────────────── */
 
 const buildPassingDim = (
   dimension: DimensionFeedback["dimension"],
@@ -127,14 +97,9 @@ vi.mock("@/lib/stories", async () => {
   };
 });
 
-/* ─── Imports after mocks ─────────────────────────────────────── */
-
 import { POST as storyEnhanceRoute } from "@/app/api/stories/enhance/route";
 import { db, schema } from "@/lib/db";
 import { createCredentialsUser } from "@/lib/auth/users";
-import {
-  REBUILD_CRITIQUE_UNITS_PER_CREDIT,
-} from "@/lib/credits";
 import {
   STORY_CRITIQUE_AUDIT_EVENT_TYPE,
   STORY_CRITIQUE_DAILY_CAP,
@@ -142,8 +107,6 @@ import {
 } from "@/lib/stories";
 
 import { ensureSchema, resetDatabase } from "../db/helpers";
-
-/* ─── Setup / teardown ───────────────────────────────────────── */
 
 beforeAll(async () => {
   await ensureSchema();
@@ -160,8 +123,6 @@ afterAll(async () => {
   await g.__irPgPool?.end();
 });
 
-/* ─── Helpers ────────────────────────────────────────────────── */
-
 const seedUser = async (email = "alice@example.com") => {
   const r = await createCredentialsUser({
     email,
@@ -172,39 +133,6 @@ const seedUser = async (email = "alice@example.com") => {
   return r.user;
 };
 
-const setBalanceAndUnits = async (
-  userId: string,
-  balance: number,
-  units: number,
-) => {
-  await db
-    .update(schema.users)
-    .set({ creditBalance: balance, rebuildCritiqueUnits: units })
-    .where(eq(schema.users.id, userId));
-};
-
-const readUser = async (userId: string) => {
-  const [row] = await db
-    .select({
-      creditBalance: schema.users.creditBalance,
-      rebuildCritiqueUnits: schema.users.rebuildCritiqueUnits,
-    })
-    .from(schema.users)
-    .where(eq(schema.users.id, userId))
-    .limit(1);
-  if (!row) throw new Error(`readUser: ${userId} not found`);
-  return row;
-};
-
-const countLedgerCharges = async (userId: string) => {
-  const rows = await db
-    .select()
-    .from(schema.creditTransactions)
-    .where(eq(schema.creditTransactions.userId, userId));
-  return rows.filter((r) => r.reason === "rebuild_critique_charge").length;
-};
-
-/** Insert N audit rows of the given event type. */
 const seedAuditRows = async (
   userId: string,
   count: number,
@@ -214,7 +142,7 @@ const seedAuditRows = async (
     await db.insert(schema.auditLog).values({
       userId,
       eventType,
-      eventData: { creditCost: 0.2 },
+      eventData: {},
     });
   }
 };
@@ -238,8 +166,6 @@ const callRoute = (body: unknown = VALID_BODY) =>
     }),
   );
 
-/* ─── Auth + same-origin tests ───────────────────────────────── */
-
 describe("POST /api/stories/enhance — auth", () => {
   it("returns 401 when not authenticated", async () => {
     mockGetActiveUserId.mockResolvedValue(null);
@@ -257,8 +183,6 @@ describe("POST /api/stories/enhance — auth", () => {
     expect(body.error).toBe("forbidden");
   });
 });
-
-/* ─── Body validation tests ──────────────────────────────────── */
 
 describe("POST /api/stories/enhance — validation", () => {
   it("returns 400 when critique is missing", async () => {
@@ -281,8 +205,6 @@ describe("POST /api/stories/enhance — validation", () => {
   });
 });
 
-/* ─── Rate-limiting tests ─────────────────────────────────────── */
-
 describe("POST /api/stories/enhance — rate limiting", () => {
   it("returns 429 when the per-user 10/24h cap is full (via critique events)", async () => {
     const u = await seedUser();
@@ -300,7 +222,6 @@ describe("POST /api/stories/enhance — rate limiting", () => {
   it("returns 429 when cap is full via a mix of critique and enhance events", async () => {
     const u = await seedUser();
     mockGetActiveUserId.mockResolvedValue(u.id);
-    // 5 critiques + 5 enhances = 10 total (at cap)
     await seedAuditRows(u.id, 5, STORY_CRITIQUE_AUDIT_EVENT_TYPE);
     await seedAuditRows(u.id, 5, STORY_ENHANCE_AUDIT_EVENT_TYPE);
 
@@ -313,82 +234,12 @@ describe("POST /api/stories/enhance — rate limiting", () => {
   it("allows an enhance when the combined cap is not yet reached", async () => {
     const u = await seedUser();
     mockGetActiveUserId.mockResolvedValue(u.id);
-    // 9 events total = one below the cap
     await seedAuditRows(u.id, STORY_CRITIQUE_DAILY_CAP - 1, STORY_CRITIQUE_AUDIT_EVENT_TYPE);
 
     const r = await callRoute();
     expect(r.status).toBe(200);
   });
 });
-
-/* ─── Credit charging tests ──────────────────────────────────── */
-
-describe("POST /api/stories/enhance — credit charging", () => {
-  it("returns 402 BEFORE the LLM call when balance=0 and units at rollover boundary", async () => {
-    const u = await seedUser();
-    mockGetActiveUserId.mockResolvedValue(u.id);
-    await setBalanceAndUnits(u.id, 0, REBUILD_CRITIQUE_UNITS_PER_CREDIT - 1);
-
-    const r = await callRoute();
-    expect(r.status).toBe(402);
-    const body = (await r.json()) as { error: string; perCritiqueCost: number };
-    expect(body.error).toBe("insufficient_credits");
-
-    // Accumulator + balance must not have moved.
-    const after = await readUser(u.id);
-    expect(after.creditBalance).toBe(0);
-    expect(after.rebuildCritiqueUnits).toBe(REBUILD_CRITIQUE_UNITS_PER_CREDIT - 1);
-    expect(await countLedgerCharges(u.id)).toBe(0);
-  });
-
-  it("non-rollover enhance returns 200 with creditsCharged=0 and bumps the accumulator", async () => {
-    const u = await seedUser();
-    mockGetActiveUserId.mockResolvedValue(u.id);
-    const startingBalance = (await readUser(u.id)).creditBalance;
-    await setBalanceAndUnits(u.id, startingBalance, 0);
-
-    const r = await callRoute();
-    expect(r.status).toBe(200);
-    const body = (await r.json()) as {
-      creditsCharged: number;
-      balanceAfter: number | null;
-    };
-    expect(body.creditsCharged).toBe(0);
-    expect(body.balanceAfter).toBe(startingBalance);
-
-    const after = await readUser(u.id);
-    expect(after.creditBalance).toBe(startingBalance);
-    expect(after.rebuildCritiqueUnits).toBe(1);
-    expect(await countLedgerCharges(u.id)).toBe(0);
-  });
-
-  it("rollover enhance returns 200 with creditsCharged=1 and writes a ledger row", async () => {
-    const u = await seedUser();
-    mockGetActiveUserId.mockResolvedValue(u.id);
-    const startingBalance = 5;
-    await setBalanceAndUnits(
-      u.id,
-      startingBalance,
-      REBUILD_CRITIQUE_UNITS_PER_CREDIT - 1,
-    );
-
-    const r = await callRoute();
-    expect(r.status).toBe(200);
-    const body = (await r.json()) as {
-      creditsCharged: number;
-      balanceAfter: number | null;
-    };
-    expect(body.creditsCharged).toBe(1);
-    expect(body.balanceAfter).toBe(startingBalance - 1);
-
-    const after = await readUser(u.id);
-    expect(after.creditBalance).toBe(startingBalance - 1);
-    expect(after.rebuildCritiqueUnits).toBe(0);
-    expect(await countLedgerCharges(u.id)).toBe(1);
-  });
-});
-
-/* ─── Success response shape ─────────────────────────────────── */
 
 describe("POST /api/stories/enhance — success path", () => {
   it("returns enhanced fields with correct shape", async () => {
@@ -405,20 +256,16 @@ describe("POST /api/stories/enhance — success path", () => {
         result: string;
         whatILearned: string;
       };
-      creditsCharged: number;
-      balanceAfter: number | null;
     };
 
     expect(typeof body.enhanced.situation).toBe("string");
     expect(typeof body.enhanced.task).toBe("string");
     expect(typeof body.enhanced.action).toBe("string");
     expect(typeof body.enhanced.result).toBe("string");
-    expect(typeof body.enhanced.whatILearned).toBe("string");
     expect(body.enhanced.situation).toBe(ENHANCED_DRAFT.situation);
     expect(body.enhanced.task).toBe(ENHANCED_DRAFT.task);
     expect(body.enhanced.action).toBe(ENHANCED_DRAFT.action);
     expect(body.enhanced.result).toBe(ENHANCED_DRAFT.result);
-    expect(typeof body.creditsCharged).toBe("number");
   });
 
   it("writes a story_enhance.unit_charged audit row on success", async () => {

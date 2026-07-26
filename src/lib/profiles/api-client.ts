@@ -182,16 +182,15 @@ export async function deleteStory(id: string): Promise<void> {
  *
  *   - `passedGuardrails: true` — the model returned a grounded
  *     draft. `aiSuggestedResponse` carries the new persisted
- *     suggestion. `syntheticSuggestion` is null. `creditsCharged`
- *     is 0 or 1 depending on accumulator rollover.
+ *     suggestion. `syntheticSuggestion` is null.
  *
  *   - `passedGuardrails: false` — schema parse / verbatim
  *     guardrail tripped. The server did NOT touch the story row
  *     (so any previously cached `aiSuggestedResponse` is
- *     preserved), did NOT bump the 10/24h gate, and did NOT
- *     charge. `aiSuggestedResponse` echoes the unchanged cached
- *     value. `syntheticSuggestion` carries a placeholder STAR
- *     shell the UI can show alongside a "try again" caveat.
+ *     preserved), did NOT bump the 10/24h gate.
+ *     `aiSuggestedResponse` echoes the unchanged cached value.
+ *     `syntheticSuggestion` carries a placeholder STAR shell
+ *     the UI can show alongside a "try again" caveat.
  */
 export async function postStorySuggestResponse(id: string): Promise<{
   story: { id: string };
@@ -199,8 +198,6 @@ export async function postStorySuggestResponse(id: string): Promise<{
   aiSuggestedResponseGeneratedAt: string | null;
   syntheticSuggestion: SuggestedResponse | null;
   passedGuardrails: boolean;
-  creditsCharged: 0 | 1;
-  balanceAfter: number | null;
 }> {
   return jsonRequest(`/api/stories/${id}/suggest-response`, {
     method: "POST",
@@ -216,8 +213,8 @@ export async function postStorySuggestResponse(id: string): Promise<{
  * Inputs: the title the user has typed (used as the implicit
  * interview question) + the theme of the form's group.
  *
- * On `passedGuardrails: false`, no charge — the form should
- * show a "try again" message and keep the user's typed title.
+ * On `passedGuardrails: false`, the form should show a "try
+ * again" message and keep the user's typed title.
  */
 export async function postStoryDraftSuggestion(args: {
   title: string;
@@ -225,8 +222,6 @@ export async function postStoryDraftSuggestion(args: {
 }): Promise<{
   suggestion: SuggestedResponse;
   passedGuardrails: boolean;
-  creditsCharged: 0 | 1;
-  balanceAfter: number | null;
 }> {
   return jsonRequest("/api/stories/draft-suggestion", {
     method: "POST",
@@ -245,8 +240,6 @@ export async function postStoryDraftSuggestion(args: {
  *     story-bank vs. seven for rebuild — `behavioral_change` is
  *     omitted since there's no interview question context).
  *   - `passedGuardrails` / `guardrailTripCount` surface model quality.
- *   - `creditsCharged` / `balanceAfter` let the UI refresh the
- *     balance pill without a follow-up fetch.
  */
 export async function postStoryCritique(args: {
   title: string;
@@ -259,8 +252,6 @@ export async function postStoryCritique(args: {
   critique: CritiqueResponse;
   passedGuardrails: boolean;
   guardrailTripCount: number;
-  creditsCharged: 0 | 1;
-  balanceAfter: number | null;
 }> {
   return jsonRequest("/api/stories/critique", {
     method: "POST",
@@ -278,8 +269,6 @@ export async function postStoryCritique(args: {
  * Response:
  *   - `enhanced` contains the rewritten STAR fields (situation, task,
  *     action, result, whatILearned).
- *   - `creditsCharged` / `balanceAfter` let the UI refresh the
- *     balance pill without a follow-up fetch.
  */
 export async function postStoryEnhance(args: {
   title: string;
@@ -297,8 +286,6 @@ export async function postStoryEnhance(args: {
     result: string;
     whatILearned: string;
   };
-  creditsCharged: 0 | 1;
-  balanceAfter: number | null;
 }> {
   return jsonRequest("/api/stories/enhance", {
     method: "POST",

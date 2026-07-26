@@ -238,8 +238,6 @@ async function mockSuggestResponse(page: Page) {
         },
         syntheticSuggestion: null,
         passedGuardrails: true,
-        creditsCharged: 0,
-        balanceAfter: 9,
       }),
     });
   });

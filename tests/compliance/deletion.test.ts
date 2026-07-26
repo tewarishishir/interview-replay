@@ -410,46 +410,6 @@ describe("hardDeleteUserRecord", () => {
     expect(orphans.every((r) => r.userId === null)).toBe(true);
   });
 
-  it("anonymizes credit_purchases + credit_transactions", async () => {
-    const user = await insertUser();
-    await db.insert(schema.creditPurchases).values({
-      userId: user.id,
-      packType: "starter",
-      creditsPurchased: 10,
-      amountPaidPaise: 999,
-      txnId: "txn_test_anon",
-      status: "succeeded",
-      expiresAt: new Date(Date.now() + 365 * 86_400_000),
-    });
-    await db.insert(schema.creditTransactions).values({
-      userId: user.id,
-      delta: 10,
-      balanceAfter: 11,
-      reason: "purchase",
-    });
-
-    await expireDeletion(user.id);
-    const result = await hardDeleteUserRecord({ userId: user.id });
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error("expected ok=true");
-    expect(result.purchasesAnonymized).toBe(1);
-    expect(result.transactionsAnonymized).toBe(1);
-
-    const orphanedPurchases = await db
-      .select()
-      .from(schema.creditPurchases)
-      .where(isNull(schema.creditPurchases.userId));
-    expect(orphanedPurchases).toHaveLength(1);
-    expect(orphanedPurchases[0]?.amountPaidPaise).toBe(999);
-
-    const orphanedTransactions = await db
-      .select()
-      .from(schema.creditTransactions)
-      .where(isNull(schema.creditTransactions.userId));
-    expect(orphanedTransactions).toHaveLength(1);
-    expect(orphanedTransactions[0]?.delta).toBe(10);
-  });
-
   it("returns the audio s3 keys still attached to the user's sessions", async () => {
     const user = await insertUser();
     const [session] = await db

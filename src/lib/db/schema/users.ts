@@ -10,7 +10,6 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
-  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type { AdapterAccountType } from "next-auth/adapters";
 
@@ -46,47 +45,6 @@ export const users = pgTable(
     image: text("image_url"),
 
     passwordHash: text("password_hash"),
-
-    /**
-     * Free trial: new accounts start with 2 credits — enough for one
-     * full 60-min interview or two 30-min rounds. Re-signups with a
-     * previously-seen email get 0 (enforced in
-     * `lib/credits/grant.ts:grantFreeTrialCredits` — the audit log is
-     * the source of truth so a soft-delete + re-signup with the same
-     * email still trips the abuse check).
-     *
-     * Older accounts that signed up under the US 10-credit policy
-     * keep their historical balance; the migration only changes the
-     * DEFAULT for new rows.
-     */
-    creditBalance: integer("credit_balance").notNull().default(2),
-
-    /**
-     * Sub-credit accumulator for rebuild critiques + story AI drafts.
-     *
-     * The pricing for a Practice Rebuild critique (and a Story-Bank
-     * AI draft, which shares this accumulator) is 0.20 credits per
-     * call — but the credit ledger and `credit_balance` are integer-
-     * valued (we never agreed to track fractional credits across the
-     * whole credit system, and the legal/financial cost of revisiting
-     * that contract isn't worth it for one feature).
-     *
-     * The compromise: every critique/draft increments this counter
-     * by 1; on the 5th increment we deduct one whole credit, write a
-     * `rebuild_critique_charge` ledger row, and reset to 0. The
-     * user-visible cost is "0.20 credits per call" and the ledger
-     * keeps integer-clean rows.
-     *
-     * Bounded 0..4 by a CHECK constraint — values outside that
-     * range mean the accumulator desynced from the
-     * `chargeRebuildCritique` helper, which is the only path that
-     * should ever touch this column.
-     */
-    rebuildCritiqueUnits: integer("rebuild_critique_units")
-      .notNull()
-      .default(0),
-
-    freeCreditUsed: boolean("free_credit_used").notNull().default(false),
 
     /**
      * ISO 3166-1 alpha-2 country code derived from the signup IP via
@@ -163,59 +121,6 @@ export const users = pgTable(
     }),
 
     /**
-     * Short referral code (Crockford base32, ~8 chars) minted at
-     * user-create time. Surfaced on the Account page + Dashboard
-     * nudge as `<host>/signup?ref=<code>`. UNIQUE across all users
-     * so the lookup at attribution time is O(1) and collisions on
-     * insert raise SQLSTATE 23505 (handled by `ensureReferralCode`
-     * in `src/lib/referrals/code.ts` with a small retry loop).
-     *
-     * Nullable in the schema only because the column is added by
-     * migration `0017_referrals.sql` to a populated `users` table —
-     * existing rows are backfilled lazily on first read of the
-     * Account / Dashboard surface (or via an admin script). Newly
-     * created rows always get a non-null value at insert time.
-     */
-    referralCode: text("referral_code"),
-
-    /**
-     * The referrer's `users.id` if this user signed up via a
-     * `?ref=` link. Null for organic signups. ON DELETE SET NULL
-     * so a hard-deleted referrer doesn't cascade into the referee
-     * row — we just lose the attribution link, which is fine for
-     * the post-payout case (the ledger row already records the
-     * grant).
-     *
-     * Self-referral is forbidden by both application code and a
-     * DB CHECK (`users_referred_by_not_self`).
-     */
-    referredByUserId: uuid("referred_by_user_id").references(
-      (): AnyPgColumn => users.id,
-      { onDelete: "set null" },
-    ),
-
-    /**
-     * When the referrer's +1 credit was granted as a result of THIS
-     * user (the referee) making their first SUCCEEDED credit-pack
-     * purchase. Null means "not yet granted"; once set, the
-     * `awardReferrerOnFirstPurchase` helper short-circuits so the
-     * payout is strictly idempotent. The atomic guard sits inside
-     * the helper's own transaction and is invoked from the Stripe
-     * `checkout.session.completed` handler — a concurrent retry of
-     * the same webhook can't double-spend the bonus.
-     *
-     * Historical note: the trigger used to be "first completed
-     * analysis" and was inlined into the analyze tx. Some legacy
-     * rows therefore have this column stamped from the
-     * analysis-time path. Those bonuses were paid out under the
-     * old policy and stay — the new purchase-trigger logic only
-     * applies to rows where this column is still NULL.
-     */
-    referrerCreditGrantedAt: timestamp("referrer_credit_granted_at", {
-      withTimezone: true,
-    }),
-
-    /**
      * Founder/operator admin flag. Gates access to the `(admin)` route
      * group (Daily Ops dashboard, Users view, Product Health view). The
      * admin layout reads this column on every request — no JWT caching —
@@ -253,7 +158,6 @@ export const users = pgTable(
   },
   (table) => [
     uniqueIndex("users_email_key").on(table.email),
-    uniqueIndex("users_referral_code_key").on(table.referralCode),
     // Newest-first signup scan for the admin Ops dashboard
     // (today/yesterday metrics, 7-day trend, 30-day funnel). Partial
     // on `deleted_at IS NULL` so the dashboard never has to filter
@@ -273,42 +177,6 @@ export const users = pgTable(
     index("users_admin_lookup_idx")
       .on(table.isAdmin)
       .where(sql`${table.isAdmin} = true`),
-    // Defense-in-depth against a buggy charge/refund path ever sending
-    // the running balance below zero. Application code is the primary
-    // guard, but a CHECK constraint means the DB refuses the bad write
-    // even if the code drifts.
-    check("users_credit_balance_nonneg", sql`${table.creditBalance} >= 0`),
-    // Pin the rebuild-critique accumulator to its valid range
-    // (0..REBUILD_CRITIQUE_UNITS_PER_CREDIT-1, currently 0..4). A value
-    // of 5 or more means the rollover-and-charge path didn't fire when
-    // it should have — better to refuse the write than to silently lose
-    // a credit charge.
-    //
-    // CRITICAL: the literal `5` here MUST stay in sync with
-    // `REBUILD_CRITIQUE_UNITS_PER_CREDIT` in `src/lib/credits/pricing.ts`.
-    // A future tweak to that constant requires a coordinated migration
-    // that drops + re-adds this CHECK with the new bound. Drift in
-    // either direction silently breaks credit accounting:
-    //   - constant > CHECK: the rollover path tries to set a value the
-    //     CHECK rejects → the charge tx fails and the user gets a free
-    //     critique (revenue loss).
-    //   - constant < CHECK: the rollover never fires → critiques pile
-    //     into the accumulator without ever charging (revenue loss).
-    check(
-      "users_rebuild_critique_units_range",
-      sql`${table.rebuildCritiqueUnits} >= 0 AND ${table.rebuildCritiqueUnits} < 5`,
-    ),
-    // Defense in depth against a buggy referral-attribution path
-    // ever pointing a user's `referred_by_user_id` at themselves
-    // (which would cause the first-analysis grant to credit the
-    // user for referring themselves — a self-funded credit loop).
-    // Application code in `createCredentialsUser` and
-    // `events.createUser` already refuses self-referral; this
-    // CHECK is the load-bearing backstop.
-    check(
-      "users_referred_by_not_self",
-      sql`${table.referredByUserId} IS NULL OR ${table.referredByUserId} <> ${table.id}`,
-    ),
     // Pin theme_preference to the three values the app actually
     // understands. Anything else would render as a blank theme in
     // the layout's data-theme attribute. Application code validates

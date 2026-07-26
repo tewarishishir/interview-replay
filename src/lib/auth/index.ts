@@ -1,4 +1,4 @@
-import { cookies, headers } from "next/headers";
+import { headers } from "next/headers";
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
@@ -10,19 +10,8 @@ import { db, schema } from "@/lib/db";
 import { env, features } from "@/lib/env";
 import { geoFromHeaders } from "@/lib/geoip";
 import { ipFromHeaders } from "@/lib/rate-limit";
-import {
-  REFERRAL_COOKIE_NAME,
-  resolveReferrerByCode,
-  setReferralCodeOnTx,
-  setReferredByOnTx,
-} from "@/lib/referrals";
-
 import { authConfig } from "./config";
-import {
-  MAX_PASSWORD_LENGTH,
-  MIN_PASSWORD_LENGTH,
-  SIGNUP_BONUS_CREDITS,
-} from "./constants";
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "./constants";
 import { sendVerificationEmail } from "./email";
 import { verifyPassword } from "./password";
 import { verifyCredentials } from "./users";
@@ -164,12 +153,11 @@ const fullConfig: NextAuthConfig = {
     /**
      * Fires only when the Drizzle adapter creates a new user — i.e. on
      * the first OAuth sign-in. Email/password signups create the user
-     * row directly in `lib/auth/users.ts` and handle credit-ledger
-     * + verification-email there, so this hook is the OAuth-only path.
+     * row directly in `lib/auth/users.ts` and handle verification-email
+     * there, so this hook is the OAuth-only path.
      *
-     * Single side-effect: write a `credit_transactions` row mirroring
-     * the schema's default `credit_balance = 1`, so the running
-     * balance is reproducible from the transaction stream alone.
+     * Side-effects: stamp geo columns on the user row and dispatch a
+     * verification email when the provider didn't verify the address.
      *
      * `emailVerified` is intentionally *not* stamped here. We rely on
      * the provider's `profile()` callback (see Google config above) to
@@ -201,107 +189,17 @@ const fullConfig: NextAuthConfig = {
         console.error("[auth.createUser] geo lookup failed:", err);
       }
 
-      // We mint exactly `SIGNUP_BONUS_CREDITS` here — the same
-      // constant the credentials path uses. Reading the user row's
-      // `creditBalance` and mirroring it (the previous behavior)
-      // silently broke if a future migration changed the column
-      // default without updating the bonus, or if an admin pre-seeded
-      // a different balance before the event fired. Pinning to the
-      // constant keeps the ledger reproducible from one source of
-      // truth.
-      //
-      // We also force the user row's `creditBalance` to match the
-      // constant so the column and the ledger sum stay equal even
-      // if the adapter inserted a different default. Doing both
-      // writes inside one transaction is the only way to keep the
-      // invariant `creditBalance == sum(credit_transactions.delta)`.
       const userId = user.id;
 
-      // Referral attribution for the OAuth flow. Form data can't
-      // round-trip through Google, so the signup page sets a short-
-      // lived cookie carrying `?ref=CODE` BEFORE kicking the OAuth
-      // redirect. We read it here, resolve the referrer, and clear
-      // the cookie regardless of whether attribution succeeded
-      // (it's done its job either way and a stale value would
-      // misattribute a future signup from the same browser).
-      let referrerId: string | null = null;
-      try {
-        const cookieStore = await cookies();
-        const refCookie = cookieStore.get(REFERRAL_COOKIE_NAME);
-        if (refCookie?.value) {
-          // Self-referral defense: pass BOTH `excludeUserId` (the
-          // authoritative match) and `excludeEmail`. The email
-          // check is currently unreachable in practice — Auth.js
-          // enforces a unique email so the same address can't
-          // map to two distinct users — but the symmetry with the
-          // credentials path catches future provider configs
-          // (e.g. `allowDangerousEmailAccountLinking`) before they
-          // become a vulnerability.
-          const referrer = await resolveReferrerByCode({
-            code: refCookie.value,
-            excludeUserId: userId,
-            excludeEmail: user.email ?? null,
-          });
-          referrerId = referrer?.id ?? null;
-          // Best-effort cookie clear. Some Next.js render contexts
-          // disallow Set-Cookie writes (read-only RSC), in which
-          // case the cookie expires naturally inside the
-          // 15-minute window.
-          try {
-            cookieStore.delete(REFERRAL_COOKIE_NAME);
-          } catch {
-            // ignore: cookie store is read-only in this context
-          }
-        }
-      } catch (err) {
-        // Failing to read the cookie must not block account
-        // creation. Log and proceed without attribution.
-        console.error("[auth.createUser] referral cookie read failed:", err);
+      if (oauthSignupCountryCode != null || oauthSignupSubdivisionCode != null) {
+        await db
+          .update(schema.users)
+          .set({
+            signupCountryCode: oauthSignupCountryCode,
+            signupSubdivisionCode: oauthSignupSubdivisionCode,
+          })
+          .where(eq(schema.users.id, userId));
       }
-
-      await db.transaction(async (tx) => {
-        // Stamp the geo columns in the same UPDATE as the credit
-        // balance so the OAuth signup writes a complete user row
-        // in one round-trip. The columns are nullable, so passing
-        // null when geo is unresolved is correct (vs. leaving the
-        // existing NULL untouched — the row was just created by
-        // the adapter with both columns null, so writing null is
-        // a no-op for that case but doesn't hurt).
-        if (
-          SIGNUP_BONUS_CREDITS > 0 ||
-          oauthSignupCountryCode != null ||
-          oauthSignupSubdivisionCode != null
-        ) {
-          await tx
-            .update(schema.users)
-            .set({
-              ...(SIGNUP_BONUS_CREDITS > 0
-                ? { creditBalance: SIGNUP_BONUS_CREDITS }
-                : {}),
-              signupCountryCode: oauthSignupCountryCode,
-              signupSubdivisionCode: oauthSignupSubdivisionCode,
-            })
-            .where(eq(schema.users.id, userId));
-
-          if (SIGNUP_BONUS_CREDITS > 0) {
-            await tx.insert(schema.creditTransactions).values({
-              userId,
-              delta: SIGNUP_BONUS_CREDITS,
-              balanceAfter: SIGNUP_BONUS_CREDITS,
-              reason: "signup_bonus",
-            });
-          }
-        }
-
-        // Mint the user's own referral code so the Account page
-        // and Dashboard nudge can surface it on the very first
-        // page load after signup.
-        await setReferralCodeOnTx(tx, userId);
-
-        if (referrerId) {
-          await setReferredByOnTx(tx, userId, referrerId);
-        }
-      });
 
       // Send verification email for OAuth users whose provider did not
       // supply a verified email. Google almost always sets email_verified,

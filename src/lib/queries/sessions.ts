@@ -129,16 +129,6 @@ export interface DashboardUser {
   name: string | null;
   email: string;
   imageUrl: string | null;
-  creditBalance: number;
-  /**
-   * Sub-credit accumulator for the rebuild critique / AI draft
-   * surfaces. Bounded `[0, REBUILD_CRITIQUE_UNITS_PER_CREDIT)`. The
-   * header pill computes the effective decimal balance as
-   * `creditBalance - rebuildCritiqueUnits / N` so the user sees
-   * the right "remaining credits" before the 5th call rolls over a
-   * whole credit.
-   */
-  rebuildCritiqueUnits: number;
   /**
    * Auth.js writes a `Date` here when the email is verified (either by
    * the OAuth provider's `email_verified` claim or, eventually, by our
@@ -173,8 +163,6 @@ export const getDashboardUser = cache(
         name: schema.users.name,
         email: schema.users.email,
         imageUrl: schema.users.image,
-        creditBalance: schema.users.creditBalance,
-        rebuildCritiqueUnits: schema.users.rebuildCritiqueUnits,
         emailVerified: schema.users.emailVerified,
         termsAcceptedAt: schema.users.termsAcceptedAt,
       })

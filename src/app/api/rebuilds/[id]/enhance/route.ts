@@ -5,12 +5,6 @@ import { z } from "zod";
 import { ANALYTICS_EVENTS } from "@/lib/analytics/events";
 import { trackServerEvent } from "@/lib/analytics/server";
 import { getActiveUserId } from "@/lib/auth/session";
-import {
-  chargeRebuildCritique,
-  InsufficientCreditsError,
-  previewRebuildCritiqueCost,
-  REBUILD_CRITIQUE_CREDIT_COST,
-} from "@/lib/credits";
 import { LlmNotConfiguredError } from "@/lib/llm";
 import { rebuildCritiqueLimiter } from "@/lib/rate-limit";
 import { isSameOrigin } from "@/lib/same-origin";
@@ -174,39 +168,6 @@ export async function POST(
     throw err;
   }
 
-  // Credit preflight — same logic as critique route.
-  let costPreview: Awaited<ReturnType<typeof previewRebuildCritiqueCost>>;
-  try {
-    costPreview = await previewRebuildCritiqueCost({ userId });
-  } catch (err) {
-    console.error("[rebuild_enhance_preflight]", err);
-    return NextResponse.json(
-      {
-        error: "service_unavailable",
-        message:
-          "We couldn't check your credit balance right now. Try again in a moment.",
-      },
-      { status: 503 },
-    );
-  }
-  if (!costPreview) {
-    return UNAUTHORIZED();
-  }
-  if (!costPreview.canAffordNext) {
-    return NextResponse.json(
-      {
-        error: "insufficient_credits",
-        message:
-          `You're out of credits. Applying suggestions costs ${REBUILD_CRITIQUE_CREDIT_COST.toFixed(2)} credits ` +
-          `— top up to continue.`,
-        required: costPreview.wouldChargeCredits,
-        available: costPreview.currentBalance,
-        perCritiqueCost: REBUILD_CRITIQUE_CREDIT_COST,
-      },
-      { status: 402 },
-    );
-  }
-
   // Run the LLM enhancement. Unlike runCritique, there is no
   // fallback path: if the model can't produce a valid rewrite, we
   // return 502 rather than serving a meaningless placeholder as
@@ -272,48 +233,19 @@ export async function POST(
 
   const updated = patched.row;
 
-  // Charge the user. Same conventions as the critique route:
-  // serve the enhanced draft regardless of billing edge-cases;
-  // swallow InsufficientCreditsError races with a logged warning.
-  let creditsCharged: 0 | 1 = 0;
-  let balanceAfter: number | null = null;
-  try {
-    const charge = await chargeRebuildCritique({
-      userId,
-      rebuildId: rebuild.id,
-    });
-    creditsCharged = charge.creditsCharged;
-    balanceAfter = charge.balanceAfter;
-  } catch (err) {
-    if (err instanceof InsufficientCreditsError) {
-      console.warn("[rebuild_enhance] charge race skipped", {
-        rebuildId: rebuild.id,
-        required: err.required,
-        available: err.available,
-      });
-    } else {
-      console.error("[rebuild_enhance_charge]", err);
-    }
-  }
-
   const dto = toRebuildDto(updated);
 
   trackServerEvent({
     distinctId: userId,
     event: ANALYTICS_EVENTS.rebuildEnhanceApplied,
     properties: {
-      credits_charged: creditsCharged,
       model_version: result.modelVersion,
       prompt_version: result.promptVersion,
     },
   });
 
   return NextResponse.json(
-    {
-      rebuild: dto,
-      creditsCharged,
-      balanceAfter,
-    },
+    { rebuild: dto },
     { status: 200, headers: { "Cache-Control": "no-store, must-revalidate" } },
   );
 }

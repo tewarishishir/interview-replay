@@ -5,12 +5,6 @@ import { z } from "zod";
 import { ANALYTICS_EVENTS } from "@/lib/analytics/events";
 import { trackServerEvent } from "@/lib/analytics/server";
 import { getActiveUserId } from "@/lib/auth/session";
-import {
-  chargeRebuildCritique,
-  InsufficientCreditsError,
-  previewRebuildCritiqueCost,
-  REBUILD_CRITIQUE_CREDIT_COST,
-} from "@/lib/credits";
 import { LlmNotConfiguredError } from "@/lib/llm";
 import { rebuildCritiqueLimiter } from "@/lib/rate-limit";
 import { isSameOrigin } from "@/lib/same-origin";
@@ -184,60 +178,6 @@ export async function POST(
     throw err;
   }
 
-  // Credit preflight. The cost is tracked as a fractional accumulator
-  // on `users.rebuild_critique_units`; every Nth critique
-  // (`REBUILD_CRITIQUE_UNITS_PER_CREDIT`) would deduct one whole
-  // credit. We refuse the call BEFORE the LLM round-trip when the
-  // user can't afford that rollover charge — no point burning an
-  // LLM call just to fail at billing time.
-  //
-  // The authoritative check happens transactionally inside
-  // `chargeRebuildCritique` (FOR UPDATE on the user row) — this
-  // preflight is the cheap optimization to avoid the LLM call. A
-  // race where the balance drops between this check and the post-
-  // critique charge is handled by the catch block around the charge:
-  // the critique gets served (we already paid for the LLM call) and the
-  // race is logged.
-  let costPreview: Awaited<
-    ReturnType<typeof previewRebuildCritiqueCost>
-  >;
-  try {
-    costPreview = await previewRebuildCritiqueCost({ userId });
-  } catch (err) {
-    // Defensive: the helper throws on out-of-range accumulator values
-    // (schema drift) or DB outages. We don't want a stack-leaking
-    // 500 — log the error and serve a generic 503 the user can retry.
-    console.error("[rebuild_critique_preflight]", err);
-    return NextResponse.json(
-      {
-        error: "service_unavailable",
-        message:
-          "We couldn't check your credit balance right now. Try again in a moment.",
-      },
-      { status: 503 },
-    );
-  }
-  if (!costPreview) {
-    // User row was soft-deleted between `getActiveUserId` and now.
-    // The session cookie outlived the deletion; treat as unauthenticated
-    // so the client clears the cookie and re-signs in.
-    return UNAUTHORIZED();
-  }
-  if (!costPreview.canAffordNext) {
-    return NextResponse.json(
-      {
-        error: "insufficient_credits",
-        message:
-          `You're out of credits. Each critique costs ${REBUILD_CRITIQUE_CREDIT_COST.toFixed(2)} credits ` +
-          `— top up to keep practicing.`,
-        required: costPreview.wouldChargeCredits,
-        available: costPreview.currentBalance,
-        perCritiqueCost: REBUILD_CRITIQUE_CREDIT_COST,
-      },
-      { status: 402 },
-    );
-  }
-
   // Run the critique. The runner throws preflight errors when
   // the draft is too thin; we map those to a 400 with the
   // missing-field list so the UI can underline the empty
@@ -334,49 +274,6 @@ export async function POST(
 
   const updated = applied.row;
 
-  // Charge the user for the critique. Runs regardless of
-  // `passedGuardrails` because `applyCritique` above persisted
-  // SOMETHING the user can act on:
-  //   - guardrails passed → the model's real response.
-  //   - guardrails tripped → `buildFallbackCritique` produced a
-  //     stripped-but-still-structural critique (5 dimensions of
-  //     feedback the candidate can self-review against).
-  //   - LLM validation failed → `buildSyntheticValidationFallback`
-  //     produced the same shape (also persisted).
-  // In all three branches we paid for the LLM call AND the user sees a
-  // real critique view, so the literal CTA copy "Costs 0.20
-  // credits per critique" needs to hold on every successful click
-  // — anything else looks like a billing bug to the user.
-  //
-  // The route's earlier preflight (`previewRebuildCritiqueCost`)
-  // makes the rollover-without-balance case rare; landing in the
-  // `InsufficientCreditsError` catch here means a race where the
-  // balance dropped during the LLM call. We log + serve the
-  // critique anyway — we don't have a good way to "un-call" the
-  // model, and forcing the user to re-pay for a critique they
-  // already saw is worse UX than swallowing the occasional sub-
-  // cent loss.
-  let creditsCharged: 0 | 1 = 0;
-  let balanceAfter: number | null = null;
-  try {
-    const charge = await chargeRebuildCritique({
-      userId,
-      rebuildId: rebuild.id,
-    });
-    creditsCharged = charge.creditsCharged;
-    balanceAfter = charge.balanceAfter;
-  } catch (err) {
-    if (err instanceof InsufficientCreditsError) {
-      console.warn("[rebuild_critique] charge race skipped", {
-        rebuildId: rebuild.id,
-        required: err.required,
-        available: err.available,
-      });
-    } else {
-      console.error("[rebuild_critique_charge]", err);
-    }
-  }
-
   // Analytics: critique_requested with the run number (1st, 2nd,
   // …). After applyCritique, totalRuns = (history.length + 1).
   // We reuse `countCritiquesInLast24h` so the 24h count is
@@ -392,7 +289,6 @@ export async function POST(
       passed_guardrails: result.passedGuardrails,
       model_version: result.modelVersion,
       prompt_version: result.promptVersion,
-      credits_charged: creditsCharged,
     },
   });
 
@@ -424,19 +320,11 @@ export async function POST(
     });
   }
 
-  // Wire the (small) failure-summary metadata back so QA can
-  // distinguish "got the model's response" from "got a fallback"
-  // in browser devtools without leaking guardrail reasons.
-  // `creditsCharged` + `balanceAfter` let the UI optimistically
-  // refresh the balance pill without a follow-up fetch (and tell
-  // the user when an accumulated rollover charge actually fired).
   return NextResponse.json(
     {
       rebuild: dto,
       passedGuardrails: result.passedGuardrails,
       guardrailTripCount: result.guardrailFailures.length,
-      creditsCharged,
-      balanceAfter,
     },
     { status: 200, headers: { "Cache-Control": "no-store, must-revalidate" } },
   );

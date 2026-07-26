@@ -216,8 +216,6 @@ export interface UserDataDump {
    * so plain text in the ZIP is the right level of access.
    */
   rebuilds: unknown[];
-  creditPurchases: unknown[];
-  creditTransactions: unknown[];
   exportedAt: string;
 }
 
@@ -243,14 +241,6 @@ export async function collectUserDataForExport(
       email: schema.users.email,
       name: schema.users.name,
       emailVerified: schema.users.emailVerified,
-      creditBalance: schema.users.creditBalance,
-      freeCreditUsed: schema.users.freeCreditUsed,
-      // Internal sub-credit accumulator for rebuild critiques. The user
-      // has a right to see it under "give them everything we have"; it
-      // also makes a charge dispute easier to walk through with them
-      // (the value 0..3 shows how close they were to the next 1-credit
-      // rollover at export time).
-      rebuildCritiqueUnits: schema.users.rebuildCritiqueUnits,
       signupCountryCode: schema.users.signupCountryCode,
       createdAt: schema.users.createdAt,
       updatedAt: schema.users.updatedAt,
@@ -325,16 +315,6 @@ export async function collectUserDataForExport(
             ),
           );
 
-  const creditPurchases = await db
-    .select()
-    .from(schema.creditPurchases)
-    .where(eq(schema.creditPurchases.userId, userId));
-
-  const creditTransactions = await db
-    .select()
-    .from(schema.creditTransactions)
-    .where(eq(schema.creditTransactions.userId, userId));
-
   // Practice Rebuild drafts. Includes every status (in_progress,
   // critiqued, saved_to_bank, discarded) so the export is a true
   // dump of what we hold for the user — even rebuilds inside the
@@ -354,8 +334,6 @@ export async function collectUserDataForExport(
     audioFiles,
     outcomes,
     rebuilds,
-    creditPurchases,
-    creditTransactions,
     exportedAt: new Date().toISOString(),
   };
 }
@@ -443,8 +421,6 @@ export async function buildExportZip(
   write("audio_files.json", dump.audioFiles);
   write("outcomes.json", dump.outcomes);
   write("rebuilds.json", dump.rebuilds);
-  write("credit_purchases.json", dump.creditPurchases);
-  write("credit_transactions.json", dump.creditTransactions);
 
   zip.file(
     "README.txt",
@@ -470,8 +446,6 @@ export async function buildExportZip(
       "  audio_files.json          metadata about deleted recordings",
       "  outcomes.json             interview outcomes you recorded",
       "  rebuilds.json             Practice Rebuild drafts and AI critiques",
-      "  credit_purchases.json     Stripe purchase history",
-      "  credit_transactions.json  credit ledger (signup bonus, charges, refunds)",
       "",
       "Questions: privacy@example.com",
     ].join("\n"),
