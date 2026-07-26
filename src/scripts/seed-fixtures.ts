@@ -7,8 +7,8 @@
  * module evaluation. `seed.ts` itself imports from here and is the
  * only place the CLI side effect runs.
  *
- * India-launch seed: realistic Indian name + companies + projects so
- * a dev clone matches the production user's context out of the box.
+ * Local dev seed: realistic company names and projects so the coaching
+ * flow has meaningful content to work with during development.
  */
 
 export const SEED_EMAIL = "admin@interview-replay.local";
