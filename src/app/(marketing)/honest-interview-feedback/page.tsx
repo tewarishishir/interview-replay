@@ -292,9 +292,8 @@ export default function HonestInterviewFeedbackPage() {
             Try InterviewReplay
           </h2>
           <p className="mt-6 text-base leading-relaxed text-muted-foreground">
-            Your first interview analysis is free. No payment required, no
-            subscription. Sign up, run a session, see what honest interview
-            feedback actually looks like.
+            Free and open source. Self-host it on your own machine — your data
+            never leaves your device.
           </p>
           <Button asChild size="lg" variant="primary" className="mt-8">
             <Link href="/signup">
