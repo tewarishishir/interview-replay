@@ -38,25 +38,18 @@ export const EXPORT_TTL_MS = EXPORT_TTL_SECONDS * 1000;
 export const TERMS_VERSION_DATE = "2026-05-16";
 
 /**
- * Privacy + ops contact surface. Used in Privacy Policy, Terms of
- * Service, and the deletion / export emails. Keep aligned with the
- * domain we ship under (InterviewReplay.ai per spec).
+ * Contact emails used in transactional email templates and data-export
+ * archives. Not exposed on any marketing page — the marketing pages
+ * were removed as part of the MIT open-source conversion.
  *
- * `PRIVACY_CONTACT_EMAIL` is also the DPDP-mandated grievance contact
- * (the Data Protection Officer route). Pre-launch this points at a
- * shared inbox the founders monitor; before public launch it must be
- * pointed at the appointed DPO's contact.
+ * Self-hosters should update these to match their own domain.
  */
 export const PRIVACY_CONTACT_EMAIL = "privacy@example.com";
 export const SUPPORT_CONTACT_EMAIL = "hello@example.com";
 
 /**
- * Inbox that receives /contact form submissions and in-app feedback
- * internal notifications. Monitored by the founder via Zoho Mail.
- *
- * NOT exposed as a mailto link anywhere on the marketing site — the
- * /contact page is the only path that surfaces it, and the server
- * route is the only thing that writes to it.
+ * Inbox that receives in-app feedback internal notifications.
+ * Self-hosters should update this to their own inbox.
  */
 export const FEEDBACK_INBOX_EMAIL = "feedback@example.com";
 

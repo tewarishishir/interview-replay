@@ -26,8 +26,7 @@ export function SampleReportBottomCta({ signupHref }: SampleReportBottomCtaProps
           interview recording.
         </p>
         <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-          Your first analysis is free. No payment required. See what InterviewReplay
-          tells you about your next real interview.
+          See what InterviewReplay tells you about your next real interview.
         </p>
         <a
           href={signupHref}
@@ -37,8 +36,7 @@ export function SampleReportBottomCta({ signupHref }: SampleReportBottomCtaProps
           Start your first analysis
         </a>
         <p className="mt-4 text-xs text-muted-foreground">
-          Currently available in India. Free first analysis for new users.
-          Credit packs start at ₹399.
+          Free and open source under the MIT license.
         </p>
       </div>
     </section>

@@ -81,18 +81,13 @@ export default function AboutPage() {
 
       <div className="mt-8 rounded-xl border border-border p-6">
         <h2 className="text-lg font-semibold text-foreground">
-          Privacy under DPDP
+          Your data, your server
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          Audio is transcribed locally using Whisper, then is
-          deleted within 60 seconds. We comply with the Digital Personal Data
-          Protection Act 2023 and never use your data for model training. You
-          can delete your account and all data at any time
-          &mdash; see our{" "}
-          <a className="text-foreground underline" href="/privacy">
-            Privacy Policy
-          </a>{" "}
-          for the full breakdown.
+          Audio is transcribed locally using Whisper, then
+          deleted within 60 seconds. Your data never leaves your server and is
+          never used for model training. You can delete your account and all
+          data at any time.
         </p>
       </div>
 

@@ -3,13 +3,11 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { auth } from "@/lib/auth";
-import { TERMS_VERSION_DATE } from "@/lib/compliance/constants";
 import { features } from "@/lib/env";
 import { getDashboardUser } from "@/lib/queries/sessions";
 import { sanitizeCallback } from "@/lib/safe-redirect";
 import { AppHeader } from "@/components/app/app-header";
 import { FeedbackWidget } from "@/components/app/feedback-widget";
-import { TermsAcceptanceModal } from "@/components/app/terms-acceptance-modal";
 
 /**
  * Returns the originally requested path (so the sign-in page can
@@ -68,16 +66,6 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     redirect("/verify-email-required");
   }
 
-  // Terms re-acceptance: compare the user's last acceptance against
-  // the deployed effective date. Anything missing or stale puts the
-  // gate modal in front of the (app) shell. Compared as midnight UTC
-  // on the constant's date so the boundary is stable across deploys.
-  const termsEffectiveAt = new Date(`${TERMS_VERSION_DATE}T00:00:00Z`);
-  const termsAccepted =
-    user.termsAcceptedAt &&
-    user.termsAcceptedAt.getTime() >= termsEffectiveAt.getTime();
-  const requiresTermsAcceptance = !termsAccepted;
-
   return (
     <div className="flex min-h-screen flex-col">
       <AppHeader
@@ -90,16 +78,6 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         rebuildCritiqueUnits={user.rebuildCritiqueUnits}
       />
       <main className="flex-1">{children}</main>
-      {requiresTermsAcceptance && (
-        <TermsAcceptanceModal effectiveDate={TERMS_VERSION_DATE} />
-      )}
-      {/*
-        Floating feedback pill. The terms-acceptance modal already
-        sits at z-50 — the widget is anchored at z-40 so it stays
-        BELOW any blocking modal but ABOVE normal page content.
-        Hidden until terms are accepted is acceptable: until then
-        the user can't interact with the app anyway.
-      */}
       <FeedbackWidget userId={user.id} />
     </div>
   );

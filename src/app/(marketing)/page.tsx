@@ -11,14 +11,14 @@ import {
 } from "@/components/marketing/testimonials";
 
 export const metadata: Metadata = {
-  title: "InterviewReplay — AI Interview Coaching for Professionals",
+  title: "InterviewReplay — Open-Source AI Interview Coaching",
   description:
-    "Record your voice during real FAANG, SDE-2, senior, staff, and PM interviews. Get structured AI feedback on every answer — clarity, structure, filler words, STAR completeness. 2 free credits when you sign up.",
+    "Record your voice during real interviews. Get structured AI feedback on every answer — clarity, structure, filler words, STAR completeness. Free and open source.",
   alternates: { canonical: "/" },
   openGraph: {
-    title: "InterviewReplay — AI Interview Coaching for Professionals",
+    title: "InterviewReplay — Open-Source AI Interview Coaching",
     description:
-      "Record your real interview voice. Get structured AI coaching calibrated to the level you're targeting. Start free — 2 credits on sign-up.",
+      "Record your real interview voice. Get structured AI coaching calibrated to the level you're targeting. Free and open source.",
     url: "/",
     images: [
       {
@@ -63,12 +63,6 @@ const organizationSchema = {
   image: `${BASE_URL}/og-image.png`,
   description:
     "InterviewReplay provides AI-powered interview feedback for professionals, analyzing real interview recordings to deliver structured, actionable coaching calibrated to the candidate's target level.",
-  contactPoint: {
-    "@type": "ContactPoint",
-    contactType: "customer support",
-    email: "hello@example.com",
-    availableLanguage: "English",
-  },
 };
 
 const softwareApplicationSchema = {
@@ -82,104 +76,19 @@ const softwareApplicationSchema = {
   description:
     "AI interview feedback tool for professionals. Records your microphone during real interviews and delivers structured analysis — clarity, STAR completeness, filler words, level-calibrated scoring — for FAANG, SDE-2, senior, staff, EM, and PM rounds.",
   inLanguage: "en",
-  offers: [
-    {
-      "@type": "Offer",
-      name: "Free trial",
-      price: "0",
-      priceCurrency: "INR",
-      description: "2 free analysis credits on sign-up — covers one 60-min interview or two 30-min rounds",
-    },
-    {
-      "@type": "Offer",
-      name: "Starter",
-      price: "399",
-      priceCurrency: "INR",
-      description: "4 interview analysis credits, prices include 18% GST",
-    },
-    {
-      "@type": "Offer",
-      name: "Standard",
-      price: "1199",
-      priceCurrency: "INR",
-      description: "14 interview analysis credits, prices include 18% GST",
-    },
-    {
-      "@type": "Offer",
-      name: "Heavy",
-      price: "2899",
-      priceCurrency: "INR",
-      description: "36 interview analysis credits, prices include 18% GST",
-    },
-  ],
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+    description: "Free and open source under the MIT license",
+  },
 };
 
-const faqs = [
-  {
-    q: "Why was InterviewReplay built?",
-    a: "The team behind InterviewReplay is made up of ex-FAANG and current FAANG engineers. None of us cleared these interviews on the first try — it took multiple attempts, largely because we never got concrete feedback on what to improve. That made the journey longer and harder than it needed to be. InterviewReplay exists to fix that. You get detailed, section-by-section feedback on your performance along with an overall InterviewReplay verdict. Review each section carefully, practice the suggested questions, and build a history of your interviews so you can come back, see how you've grown, and walk into the next tough interview honestly prepared.",
-  },
-  {
-    q: "Is InterviewReplay available outside India?",
-    a: "InterviewReplay is currently available in India. We plan to expand to other markets — sign up to stay updated.",
-  },
-  {
-    q: "What if I'm interviewing with a company outside India?",
-    a: "Many Indian engineers interview with global companies — that's fine. If your interviewer is based outside India, please review the recording laws applicable to their jurisdiction. InterviewReplay provides the tool; you ensure compliance with local laws in your specific situation.",
-  },
-  {
-    q: "Does it record the interviewer?",
-    a: "No. InterviewReplay only records your microphone. Wear headphones during the interview and the interviewer's voice never reaches the recording.",
-  },
-  {
-    q: "How is my data protected?",
-    a: "Your audio is processed and deleted within 60 seconds of transcription. We comply with the Digital Personal Data Protection Act 2023 and never use your data for AI training. You can delete your account and all data at any time.",
-  },
-  {
-    q: "Can I delete my data?",
-    a: "Yes. Every recording, transcript, and report can be deleted from your dashboard at any time. Account deletion wipes everything within 30 days, including backups.",
-  },
-  {
-    q: "How accurate is the feedback?",
-    a: "Our analysis pipeline transcribes your audio, redacts personal info, and scores it against the rubric for the level you targeted. It's good at flagging clarity, structure, filler words, and STAR-completeness for behavioral answers. It's not infallible — treat it like a thoughtful peer review, not a hiring decision.",
-  },
-  {
-    q: "Does this work for non-engineering interviews?",
-    a: "Yes. The behavioral and 'other' round types cover product, design, business, sales, and most other formats. The rubric for technical-only signals (e.g. system design depth) only fires for the matching round type, so a PM behavioral interview won't be unfairly penalized.",
-  },
-  {
-    q: "How does the free trial work?",
-    a: "When you create your InterviewReplay account, we give you 2 credits to try the product. You can use them however you want — analyze one full 60-minute interview, or two 30-minute rounds, or one 30-minute round and save the rest for later. Credits never expire. After your free credits are used, you can buy a credit pack starting at ₹399.",
-  },
-] as const;
-
 export default async function HomePage() {
-  // Auth-aware hero CTA: signed-in users have already done the
-  // "get your free analysis" funnel — pushing them at /signup again
-  // is a dead-end. Send them to the dashboard instead.
   const session = await auth();
   const isSignedIn = Boolean(session?.user?.id);
 
-  // Fetch testimonial JSON-LD in parallel with the section render.
-  // The Testimonials component does its own fetch (single source of
-  // truth for the limit + cap), so this second call is effectively
-  // a cache hit at the DB layer — same partial index, same query.
-  // Could optimise to one fetch later by lifting state up, but the
-  // current overhead is one extra index scan on a tiny table.
   const reviewSchema = await getTestimonialsReviewSchema();
-
-  const faqSchema = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: faqs.map((faq) => ({
-      "@type": "Question",
-      name: faq.q,
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: faq.a,
-      },
-    })),
-  };
 
   return (
     <>
@@ -217,19 +126,15 @@ export default async function HomePage() {
             ) : (
               <Button asChild size="lg" variant="primary">
                 <Link href="/signup">
-                  Get your free analysis
+                  Get started
                   <ArrowRight className="size-4" aria-hidden />
                 </Link>
               </Button>
             )}
-            <Button asChild size="lg" variant="outline">
-              <Link href="/pricing">See pricing</Link>
-            </Button>
           </div>
           {!isSignedIn && !features.inviteOnlyBeta && (
             <p className="mt-4 text-xs text-muted-foreground">
-              Your first interview free, up to 60 minutes. No credit card
-              required to start.
+              Free and open source. No credit card required.
             </p>
           )}
           {!isSignedIn && features.inviteOnlyBeta && (
@@ -338,65 +243,6 @@ export default async function HomePage() {
 
       <Testimonials />
 
-      <section
-        id="pricing-teaser"
-        className="border-t border-border"
-        aria-labelledby="pricing-teaser-heading"
-      >
-        <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-6 py-20 text-center">
-          <h2
-            id="pricing-teaser-heading"
-            className="text-3xl font-semibold tracking-tight sm:text-4xl"
-          >
-            First analysis free. Then pay only for what you use.
-          </h2>
-          <p className="max-w-xl text-base text-muted-foreground">
-            No subscription. Buy credits, use them when you interview. Packs
-            start at ₹399 (incl. 18% GST). Credits never expire.
-          </p>
-          <Button asChild size="lg" variant="primary" className="mt-2">
-            <Link href="/pricing">
-              See pricing
-              <ArrowRight className="size-4" aria-hidden />
-            </Link>
-          </Button>
-        </div>
-      </section>
-
-      <section
-        id="faq"
-        aria-labelledby="faq-heading"
-        className="border-t border-border bg-muted/30"
-      >
-        <div className="mx-auto max-w-3xl px-6 py-20">
-          <h2
-            id="faq-heading"
-            className="text-3xl font-semibold tracking-tight sm:text-4xl"
-          >
-            Frequently asked questions
-          </h2>
-
-          <div className="mt-10 divide-y divide-border">
-            {faqs.map((faq) => (
-              <details key={faq.q} className="group py-5">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-medium text-foreground">
-                  <span>{faq.q}</span>
-                  <span
-                    aria-hidden
-                    className="text-muted-foreground transition-transform group-open:rotate-45"
-                  >
-                    +
-                  </span>
-                </summary>
-                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                  {faq.a}
-                </p>
-              </details>
-            ))}
-          </div>
-        </div>
-      </section>
-
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
@@ -404,22 +250,12 @@ export default async function HomePage() {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          // Splice in featured-testimonial reviews when there are
-          // any. Search engines treat product-attached reviews
-          // (review array on SoftwareApplication) more strictly than
-          // free-floating Review nodes, which is what we want — so
-          // we attach them here rather than emitting a separate
-          // <script> tag.
           __html: JSON.stringify(
             reviewSchema
               ? { ...softwareApplicationSchema, review: reviewSchema }
               : softwareApplicationSchema,
           ),
         }}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
       />
     </>
   );

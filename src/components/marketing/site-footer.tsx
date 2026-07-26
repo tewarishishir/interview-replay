@@ -1,15 +1,9 @@
 import Link from "next/link";
 
-import { SUPPORT_CONTACT_EMAIL } from "@/lib/compliance/constants";
-
 const footerLinks = [
   { href: "/about", label: "About" },
-  { href: "/pricing", label: "Pricing" },
   { href: "/honest-interview-feedback", label: "Honest interview feedback" },
   { href: "/sample-report", label: "Sample report" },
-  { href: "/privacy", label: "Privacy" },
-  { href: "/terms", label: "Terms" },
-  { href: "/contact", label: "Contact" },
 ] as const;
 
 function YouTubeIcon({ className }: { className?: string }) {
@@ -64,14 +58,7 @@ export function SiteFooter() {
     >
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 text-sm text-muted-foreground sm:flex-row">
         <p>
-          &copy; {new Date().getFullYear()} InterviewReplay. All rights reserved.
-          {" · "}
-          <a
-            href={`mailto:${SUPPORT_CONTACT_EMAIL}`}
-            className="transition-colors hover:text-foreground"
-          >
-            {SUPPORT_CONTACT_EMAIL}
-          </a>
+          &copy; {new Date().getFullYear()} InterviewReplay. MIT License.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6">
           <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-4 sm:gap-6">

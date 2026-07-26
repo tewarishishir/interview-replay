@@ -55,7 +55,7 @@ export function AccountRestoreBanner({
         });
         if (r.status === 410) {
           setError(
-            "Your account is past the restore window. Contact privacy@example.com if you need help.",
+            "Your account is past the restore window. Please contact the site administrator for help.",
           );
           return;
         }

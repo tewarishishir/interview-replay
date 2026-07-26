@@ -9,24 +9,14 @@ import { UserMenu } from "@/components/app/user-menu";
 import { Wordmark } from "@/components/brand/wordmark";
 
 const navLinks = [
-  { href: "/pricing", label: "Pricing" },
   { href: "/about", label: "About" },
 ] as const;
 
 /**
  * Marketing-site header.
  *
- * The header is auth-aware so a signed-in user landing on /, /pricing, or
- * /about doesn't see "Sign in / Get started" CTAs (which made it look
- * like they'd been signed out). When authenticated we swap them for a
- * "Dashboard" link plus the same `UserMenu` rendered inside the (app)
- * shell, so the user can sign out from anywhere.
- *
- * We use `auth()` (which only decodes the JWT — no DB hit) instead of
- * the heavier `getDashboardUser` lookup. Marketing pages don't need
- * revocation defense-in-depth because clicking "Dashboard" bounces the
- * request through the (app) layout, which DOES re-validate the user
- * exists in the DB before rendering anything sensitive.
+ * Auth-aware: a signed-in user sees "Dashboard" + UserMenu instead of
+ * "Sign in / Get started" CTAs. Uses `auth()` (JWT decode, no DB hit).
  */
 export async function SiteHeader() {
   const session = await auth();

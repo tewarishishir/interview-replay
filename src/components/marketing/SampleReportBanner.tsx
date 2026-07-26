@@ -43,7 +43,7 @@ export function SampleReportBanner({ signupHref }: SampleReportBannerProps) {
           className="shrink-0 text-sm font-medium whitespace-nowrap hover:underline"
           style={{ color: "var(--color-ir-gold)" }}
         >
-          Get your first analysis free →
+          Try it yourself →
         </a>
       </div>
     </div>

@@ -56,15 +56,11 @@ const serviceSchema = {
     name: "InterviewReplay",
     url: BASE_URL,
   },
-  areaServed: {
-    "@type": "Country",
-    name: "India",
-  },
   offers: {
     "@type": "Offer",
-    name: "First interview analysis free",
     price: "0",
-    priceCurrency: "INR",
+    priceCurrency: "USD",
+    description: "Free and open source under the MIT license",
   },
 };
 
@@ -392,8 +388,7 @@ export default function HonestInterviewFeedbackPage() {
             </Link>
           </Button>
           <p className="mt-4 text-xs text-muted-foreground">
-            InterviewReplay is available in India. 2 free credits on signup &mdash;
-            enough for one 60-minute interview. Credit packs start at ₹399.
+            Free and open source under the MIT license.
           </p>
         </div>
       </section>

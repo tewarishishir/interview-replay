@@ -448,9 +448,8 @@ function ConsentStep({
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            By clicking Start, you agree to our Terms of Service. This will
-            use 0 credits to start, and credits will be charged only if you
-            submit for analysis.
+            This will use 0 credits to start, and credits will be charged
+            only if you submit for analysis.
           </p>
         </div>
       </form>

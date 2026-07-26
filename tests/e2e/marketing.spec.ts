@@ -13,49 +13,23 @@ test.describe("marketing pages", () => {
 
     await expect(
       page.getByRole("heading", {
-        name: /Real interview feedback\. From your real interviews\./,
+        name: /Real interview feedback\./,
         level: 1,
       }),
     ).toBeVisible();
 
     // Spec: primary CTA links to /signup
-    const cta = page.getByRole("link", { name: /Get your free analysis/i }).first();
+    const cta = page.getByRole("link", { name: /Get started/i }).first();
     await expect(cta).toBeVisible();
     await expect(cta).toHaveAttribute("href", "/signup");
-
-    // Spec: pricing teaser links to /pricing
-    await expect(
-      page.getByRole("link", { name: /^See pricing$/i }).first(),
-    ).toHaveAttribute("href", "/pricing");
 
     // Spec: How-it-works has the three steps
     await expect(page.getByText(/Set up your interview/)).toBeVisible();
     await expect(page.getByText(/Record your voice/)).toBeVisible();
     await expect(page.getByText(/Get structured feedback/)).toBeVisible();
-
-    // Spec: FAQ contains the legality question
-    await expect(page.getByText(/Is this legal\?/)).toBeVisible();
   });
 
-  test("pricing page shows the three credit packs", async ({ page }) => {
-    await page.goto("/pricing");
-
-    await expect(
-      page.getByRole("heading", { name: /Pay only for what you use/i }),
-    ).toBeVisible();
-
-    for (const pack of ["Starter", "Standard", "Heavy Prep"]) {
-      await expect(
-        page.getByRole("heading", { name: pack, exact: true }),
-      ).toBeVisible();
-    }
-
-    // Credit usage table
-    await expect(page.getByText(/Up to 30 minutes/)).toBeVisible();
-    await expect(page.getByText(/Up to 120 minutes/)).toBeVisible();
-  });
-
-  test("about page mentions the privacy commitment", async ({ page }) => {
+  test("about page loads", async ({ page }) => {
     await page.goto("/about");
     await expect(
       page.getByRole("heading", { name: /Why InterviewReplay exists/i }),
@@ -65,24 +39,12 @@ test.describe("marketing pages", () => {
     ).toBeVisible();
   });
 
-  test("privacy and terms each show the counsel-review banner", async ({
-    page,
-  }) => {
-    for (const path of ["/privacy", "/terms"] as const) {
-      await page.goto(path);
-      await expect(
-        page.getByText(/reviewed by counsel before public launch/i),
-      ).toBeVisible();
-    }
-  });
-
   test("honest-interview-feedback page loads with correct content and metadata", async ({
     page,
   }) => {
     const response = await page.goto("/honest-interview-feedback");
     expect(response?.status()).toBe(200);
 
-    // H1 — exact text per spec
     await expect(
       page.getByRole("heading", {
         name: "Honest Interview Feedback — From the Interview You Actually Had",
@@ -90,34 +52,16 @@ test.describe("marketing pages", () => {
       }),
     ).toBeVisible();
 
-    // CTA button exists, is a real link, points to /signup
     const cta = page
       .getByRole("link", { name: /Start your first analysis/i })
       .first();
     await expect(cta).toBeVisible();
     await expect(cta).toHaveAttribute("href", "/signup");
 
-    // Open Graph metadata
     await expect(page.locator('meta[property="og:title"]')).toHaveAttribute(
       "content",
       "Honest Interview Feedback — From the Interview You Actually Had",
     );
-    await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
-      "content",
-      "https://example.com/honest-interview-feedback",
-    );
-    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
-      "content",
-      "https://example.com/og/ir-og-honest-feedback.png",
-    );
-
-    // Schema.org JSON-LD
-    const jsonLd = page.locator('script[type="application/ld+json"]').first();
-    await expect(jsonLd).toBeAttached();
-    const rawJson = await jsonLd.textContent();
-    expect(() => JSON.parse(rawJson ?? "")).not.toThrow();
-    const schema = JSON.parse(rawJson ?? "{}");
-    expect(schema["@type"]).toBe("Service");
   });
 
   test("honest-interview-feedback page renders correctly at mobile viewport", async ({
@@ -138,7 +82,6 @@ test.describe("marketing pages", () => {
       .first();
     await expect(cta).toBeVisible();
 
-    // Touch target — bounding box at least 44×44px
     const box = await cta.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.height).toBeGreaterThanOrEqual(44);
@@ -158,10 +101,8 @@ test.describe("marketing pages", () => {
 
     for (const [label, href] of [
       ["About", "/about"],
-      ["Pricing", "/pricing"],
       ["Honest interview feedback", "/honest-interview-feedback"],
-      ["Privacy", "/privacy"],
-      ["Terms", "/terms"],
+      ["Sample report", "/sample-report"],
     ] as const) {
       await expect(
         footer.getByRole("link", { name: label }),

@@ -8,7 +8,6 @@ import { auth } from "@/lib/auth";
 import {
   ACCOUNT_DELETION_GRACE_DAYS,
   describeDeletionState,
-  PRIVACY_CONTACT_EMAIL,
 } from "@/lib/compliance";
 import { db, schema } from "@/lib/db";
 import {
@@ -108,14 +107,7 @@ export default async function AccountPage() {
               label="Joined"
               value={<LocalTime date={user.createdAt} options={{ year: "numeric", month: "long", day: "numeric" }} />}
             />
-            <Field
-              label="Terms accepted"
-              value={
-                user.termsAcceptedAt
-                  ? <LocalTime date={user.termsAcceptedAt} options={{ year: "numeric", month: "short", day: "numeric" }} />
-                  : "Not yet"
-              }
-            />
+            
           </dl>
         </Card>
 
@@ -149,17 +141,7 @@ export default async function AccountPage() {
                 Financial records (purchases, ledger entries) are
                 anonymized but kept for tax compliance.
               </p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Questions? Email{" "}
-                <a
-                  className="text-foreground underline"
-                  href={`mailto:${PRIVACY_CONTACT_EMAIL}`}
-                >
-                  {PRIVACY_CONTACT_EMAIL}
-                </a>{" "}
-                first &mdash; we may be able to help with whatever
-                prompted this.
-              </p>
+              
               <div className="mt-4">
                 <AccountDeletionSection
                   graceDays={ACCOUNT_DELETION_GRACE_DAYS}
