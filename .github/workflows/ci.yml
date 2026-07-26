@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - staging
+  pull_request:
+    branches:
+      - staging
+      - main
+
+jobs:
+  ci:
+    name: Typecheck, lint & test
+    # Skip on staging→main promotion PRs — the same code already passed CI on staging.
+    if: "!(github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'staging')"
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ir_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ir_test
+      AUTH_SECRET: ci-test-secret-not-used-in-production-32x
+      NEXTAUTH_URL: http://localhost:3000
+      # Local file storage (no external service needed)
+      STORAGE_PATH: /tmp/ir-test-storage
+      STORAGE_SECRET: ci-test-secret-not-used-in-production-32x
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Apply database migrations
+        run: |
+          for f in $(ls drizzle/*.sql | sort -V); do
+            echo "Applying: $f"
+            PGPASSWORD=postgres psql \
+              -h localhost -p 5432 -U postgres -d ir_test \
+              -v ON_ERROR_STOP=1 \
+              -f "$f"
+          done
+
+      - name: Unit tests
+        run: pnpm test

@@ -1,0 +1,67 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ir-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: interview_replay
+      POSTGRES_PASSWORD: interview_replay
+      POSTGRES_DB: interview_replay
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U interview_replay"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ir-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Uncomment for GPU support:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ir-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "postgres://interview_replay:interview_replay@db:5432/interview_replay"
+      OLLAMA_BASE_URL: "http://ollama:11434/v1"
+      LLM_MODEL_LARGE: "llama3.3:70b"
+      LLM_MODEL_SMALL: "llama3.3:8b"
+      WHISPER_MODEL_SIZE: "medium"
+      WHISPER_DEVICE: "auto"
+      STORAGE_PATH: "/app/data/uploads"
+      STORAGE_SECRET: "change-me-to-a-random-string"
+      AUTH_SECRET: "change-me-to-a-random-string"
+      NEXTAUTH_URL: "http://localhost:3000"
+    volumes:
+      - uploads:/app/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+
+volumes:
+  pgdata:
+  ollama_data:
+  uploads:

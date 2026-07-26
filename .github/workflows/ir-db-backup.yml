@@ -1,0 +1,46 @@
+name: ir-db-backup
+
+on:
+  schedule:
+    - cron: '0 5 * * *' # Runs nightly at midnight EST
+  workflow_dispatch:
+
+jobs:
+  db-backup:
+    runs-on: ubuntu-latest
+
+    env:
+      RETENTION: 180
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      BACKUP_PATH: ${{ secrets.BACKUP_PATH || '/tmp/ir-backups' }}
+      PG_VERSION: '16'
+
+    steps:
+      - name: Install PostgreSQL
+        run: |
+          sudo apt update
+          yes '' | sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
+          sudo apt install -y postgresql-${{ env.PG_VERSION }}
+
+      - name: Set PostgreSQL binary path
+        run: echo "POSTGRES=/usr/lib/postgresql/${{ env.PG_VERSION }}/bin" >> $GITHUB_ENV
+
+      - name: Set file variables
+        run: |
+          GZIP_NAME="$(date +'%B-%d-%Y@%H:%M:%S').sql.gz"
+          FOLDER_NAME="${{ github.workflow }}"
+          BACKUP_DIR="${{ env.BACKUP_PATH }}/${FOLDER_NAME}"
+          echo "GZIP_NAME=${GZIP_NAME}" >> $GITHUB_ENV
+          echo "FOLDER_NAME=${FOLDER_NAME}" >> $GITHUB_ENV
+          echo "BACKUP_DIR=${BACKUP_DIR}" >> $GITHUB_ENV
+
+      - name: Create backup directory
+        run: mkdir -p "${{ env.BACKUP_DIR }}"
+
+      - name: Run pg_dump
+        run: |
+          $POSTGRES/pg_dump ${{ env.DATABASE_URL }} | gzip > "${{ env.BACKUP_DIR }}/${{ env.GZIP_NAME }}"
+
+      - name: Delete old backups beyond retention window
+        run: |
+          find "${{ env.BACKUP_DIR }}" -name "*.sql.gz" -mtime +${{ env.RETENTION }} -delete
